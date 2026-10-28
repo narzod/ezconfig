@@ -1,4 +1,4 @@
-module inirepl
+module ezconfig
 
 go 1.24
 

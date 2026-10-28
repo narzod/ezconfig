@@ -29,7 +29,7 @@ func TestComplete(t *testing.T) {
 		line string
 		want []string
 	}{
-		{"", []string{"copy ", "delim ", "dump ", "get ", "help ", "history ", "json ", "keys ", "quit ",
+		{"", []string{"changes ", "copy ", "delim ", "dump ", "get ", "help ", "history ", "keys ", "list ", "move ", "path ", "quit ",
 			"revert ", "save ", "sections ", "set ", "status ", "unset ", "version ", "wipe "}},
 		{"se", []string{"sections ", "set "}},
 		{"delim ", []string{"/", ":", "|"}},
@@ -59,10 +59,17 @@ func TestComplete(t *testing.T) {
 		{"unset n", []string{"name ", "nightly ", "net."}},
 		{"wipe ", []string{". ", "display ", "net "}},
 		{"wipe net n", []string{"net "}},
+		{"list ", []string{".", "display", "net"}},
+		{"list net ", nil},
 		{"dump ", []string{".", "display", "net"}},
-		{"dump net ", nil},
-		{"json ", []string{".", "display", "net"}},
-		{"j", []string{"json "}},
+		{"l", []string{"list "}},
+		{"c", []string{"changes ", "copy "}},
+		{"m", []string{"move "}},
+		{"move ", []string{". ", "display ", "net "}},
+		{"move net ", nil},
+		{"ch", []string{"changes "}},
+		{"changes ", []string{".", "display", "net"}},
+		{"j", nil},
 		{"status ", nil},
 		{"sections ", nil},
 	}
@@ -182,7 +189,7 @@ func TestDelimiter(t *testing.T) {
 	if !reflect.DeepEqual(cands, []string{"boot.description/keyboard.typ "}) {
 		t.Errorf("complete with /: got %q", cands)
 	}
-	_, cands, _ = r.complete("dump ", len("dump "))
+	_, cands, _ = r.complete("list ", len("list "))
 	if !reflect.DeepEqual(cands, []string{"/", "boot.description", "net"}) {
 		t.Errorf("list completion with /: got %q", cands)
 	}

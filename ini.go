@@ -233,17 +233,55 @@ func (ini *Ini) CopySection(src, dst string) error {
 		if src == ini.delim {
 			return fmt.Errorf("cannot copy the root to itself")
 		}
-		if len(ini.root.entries) > 0 {
-			return fmt.Errorf("the root is not empty (wipe %s first)", ini.delim)
-		}
-		for _, e := range s.entries {
-			if ini.section(e.key) != nil {
-				return fmt.Errorf("key %s would share its name with section %s", e.key, e.key)
-			}
+		if err := ini.checkIntoRoot(s, nil); err != nil {
+			return err
 		}
 		ini.root.entries = append([]entry(nil), s.entries...)
 		return nil
 	}
+	if err := ini.checkNewSection(dst); err != nil {
+		return err
+	}
+	entries := append([]entry(nil), s.entries...)
+	ini.sections = append(ini.sections, &section{name: dst, entries: entries})
+	return nil
+}
+
+// MoveSection moves src's keys to dst and removes src. Either may be the
+// delimiter, meaning the root. Moving one section to a new name renames
+// it in place, keeping its position in the file; moving the root keys
+// into a section appends that section. The same checks as CopySection
+// apply to dst.
+func (ini *Ini) MoveSection(src, dst string) error {
+	s := ini.sectionOrRoot(src)
+	if s == nil {
+		return fmt.Errorf("no such section: %s", src)
+	}
+	switch {
+	case src == dst:
+		return fmt.Errorf("%s is already there", src)
+	case dst == ini.delim: // a section's keys become the root keys
+		if err := ini.checkIntoRoot(s, s); err != nil {
+			return err
+		}
+		ini.root.entries = s.entries
+		ini.UnsetSection(src)
+		return nil
+	}
+	if err := ini.checkNewSection(dst); err != nil {
+		return err
+	}
+	if src == ini.delim { // the root keys become a new section
+		ini.sections = append(ini.sections, &section{name: dst, entries: ini.root.entries})
+		ini.ClearRoot()
+		return nil
+	}
+	s.name = dst // a rename, in place
+	return nil
+}
+
+// checkNewSection reports whether dst can be created as a new section.
+func (ini *Ini) checkNewSection(dst string) error {
 	if dst == "" || strings.Contains(dst, ini.delim) || strings.ContainsAny(dst, "[]= \t") {
 		return fmt.Errorf("invalid section name: %s", dst)
 	}
@@ -253,9 +291,36 @@ func (ini *Ini) CopySection(src, dst string) error {
 	if _, ok := ini.Get(dst); ok {
 		return fmt.Errorf("a root key named %s exists", dst)
 	}
-	entries := append([]entry(nil), s.entries...)
-	ini.sections = append(ini.sections, &section{name: dst, entries: entries})
 	return nil
+}
+
+// checkIntoRoot reports whether s's keys can become the root keys: the
+// root must be empty and no key may share its name with a section. leaving
+// is a section about to be removed (the source of a move), which doesn't
+// count; nil when copying.
+func (ini *Ini) checkIntoRoot(s, leaving *section) error {
+	if len(ini.root.entries) > 0 {
+		return fmt.Errorf("the root is not empty (wipe %s first)", ini.delim)
+	}
+	for _, e := range s.entries {
+		if other := ini.section(e.key); other != nil && other != leaving {
+			return fmt.Errorf("key %s would share its name with section %s", e.key, e.key)
+		}
+	}
+	return nil
+}
+
+// KeyPaths returns full key addresses in file order: every key when sec
+// is "", only the root keys when sec is the delimiter, otherwise only
+// that section's. They are list's lines without the values. ok is false
+// if sec doesn't exist.
+func (ini *Ini) KeyPaths(sec string) (paths []string, ok bool) {
+	lines, ok := ini.List(sec)
+	for _, l := range lines {
+		p, _, _ := strings.Cut(l, "=") // keys never contain "="
+		paths = append(paths, p)
+	}
+	return paths, ok
 }
 
 // Keys returns key names in file order: root keys when sec is "" or the
@@ -308,7 +373,7 @@ func writeAtomic(path string, data []byte) error {
 	if fi, err := os.Stat(path); err == nil {
 		mode = fi.Mode().Perm()
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".inirepl-*.tmp")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".ezconfig-*.tmp")
 	if err != nil {
 		return err
 	}

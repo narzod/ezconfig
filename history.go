@@ -6,8 +6,8 @@ package main
 //
 //	config.ini
 //	system.ini
-//	.inirepl/config.ini.hst
-//	.inirepl/system.ini.hst
+//	.ezconfig/config.ini.hst
+//	.ezconfig/system.ini.hst
 //
 // A config's history file is its switch: `history on` creates it (and the
 // folder, hidden on Windows), `history off` deletes it after asking, and
@@ -23,6 +23,8 @@ package main
 // erases the history, after asking. A file without a header is treated
 // as using "."; a "#sep" header from 0.5 is read as "#delim".
 //
+// Earlier versions were called inirepl. 0.8 kept the same per-config files
+// in a ".inirepl" folder; they are moved into ".ezconfig" automatically.
 // Versions 0.3 to 0.7 kept one shared .inirepl.hst per folder. It can't
 // be split by config, so on startup the shell offers to adopt it as this
 // config's history, or to delete it.
@@ -37,8 +39,9 @@ import (
 )
 
 const (
-	histDir    = ".inirepl"     // hidden folder next to the configs
+	histDir    = ".ezconfig"    // hidden folder next to the configs
 	histExt    = ".hst"         // histDir/<config file name>.hst
+	oldHistDir = ".inirepl"     // the same folder in 0.8, under the old name
 	legacyName = ".inirepl.hst" // the shared file used by 0.3 to 0.7
 	histLimit  = 500            // commands kept; the file is trimmed at startup
 	histHeader = "#delim "
@@ -56,7 +59,7 @@ func headerDelim(line string) (string, bool) {
 }
 
 // histLabel is the history file's path relative to the config's folder,
-// e.g. ".inirepl/config.ini.hst", for messages.
+// e.g. ".ezconfig/config.ini.hst", for messages.
 func (r *Repl) histLabel() string {
 	name := filepath.Base(r.path)
 	if runtime.GOOS == "windows" { // Config.ini and config.ini are one file there
@@ -161,6 +164,33 @@ func (r *Repl) writeHistory(sep string, lines []string, create bool) error {
 		err = cerr
 	}
 	return err
+}
+
+// migrateOldDir runs at startup: a history this config had in 0.8's
+// ".inirepl" folder is moved into ".ezconfig", and the old folder is
+// removed once empty. Same format, so nothing needs asking.
+func (r *Repl) migrateOldDir() {
+	if !r.interactive || r.historyOn() {
+		return
+	}
+	folder := filepath.Dir(r.path)
+	old := filepath.Join(folder, oldHistDir, filepath.Base(r.histLabel()))
+	if _, err := os.Stat(old); err != nil {
+		return
+	}
+	if err := r.ensureHistDir(); err != nil {
+		errorf("history: %v", err)
+		return
+	}
+	if err := os.Rename(old, r.histFile()); err != nil {
+		errorf("history: %v", err)
+		return
+	}
+	fmt.Printf("moved history from %s to %s\n",
+		filepath.Join(oldHistDir, filepath.Base(old)), r.histLabel())
+	if entries, err := os.ReadDir(filepath.Join(folder, oldHistDir)); err == nil && len(entries) == 0 {
+		os.Remove(filepath.Join(folder, oldHistDir))
+	}
 }
 
 // offerLegacy runs at startup when the shared .inirepl.hst from 0.3 to

@@ -48,22 +48,23 @@ func TestOneShotRead(t *testing.T) {
 		{"get", []string{"name", "net.host"}, 0, "demo\nlocalhost\n"},
 		{"get", []string{"name", "net.nope", "net.host"}, 5, ""}, // all or nothing
 		{"get", nil, 4, ""},
-		{"keys", nil, 0, "name\nnightly\n"},
-		{"keys", []string{"net"}, 0, "host\nport\n"},
+		{"keys", nil, 0, "name\nnightly\nnet.host\nnet.port\ndisplay.width\n"},
+		{"keys", []string{"net"}, 0, "net.host\nnet.port\n"},
 		{"keys", []string{"."}, 0, "name\nnightly\n"},
 		{"keys", []string{"nope"}, 5, ""},
 		{"sections", nil, 0, "net\ndisplay\n"},
 		{"sections", []string{"x"}, 4, ""},
-		{"dump", []string{"net"}, 0, "net.host=localhost\nnet.port=8080\n"},
-		{"dump", []string{"."}, 0, "name=demo\nnightly=true\n"},
+		{"list", []string{"net"}, 0, "net.host=localhost\nnet.port=8080\n"},
+		{"list", []string{"."}, 0, "name=demo\nnightly=true\n"},
+		{"list", []string{"nope"}, 5, ""},
+		{"list", []string{"a", "b"}, 4, ""},
+		{"dump", nil, 0, "{\n  \"name\": \"demo\","},
+		{"dump", []string{"net"}, 0, "{\n  \"host\": \"localhost\",\n  \"port\": \"8080\"\n}\n"},
+		{"dump", []string{"."}, 0, "{\n  \"name\": \"demo\",\n  \"nightly\": \"true\"\n}\n"},
 		{"dump", []string{"nope"}, 5, ""},
-		{"dump", []string{"a", "b"}, 4, ""},
-		{"json", nil, 0, "{\n  \"name\": \"demo\","},
-		{"json", []string{"net"}, 0, "{\n  \"host\": \"localhost\",\n  \"port\": \"8080\"\n}\n"},
-		{"json", []string{"."}, 0, "{\n  \"name\": \"demo\",\n  \"nightly\": \"true\"\n}\n"},
-		{"json", []string{"nope"}, 5, ""},
-		{"list", nil, 4, ""},
+		{"json", nil, 4, ""},
 		{"wipe", []string{"net"}, 4, ""},
+		{"move", []string{"net", "web"}, 4, ""},
 		{"bogus", nil, 4, ""},
 	}
 	for _, c := range cases {
@@ -127,7 +128,7 @@ func TestOneShotUnset(t *testing.T) {
 	if code, _, _ := run(t, p, ".", "unset", "name", "net.host"); code != 0 {
 		t.Errorf("unset: code %d", code)
 	}
-	_, out, _ := run(t, p, ".", "dump")
+	_, out, _ := run(t, p, ".", "list")
 	if out != "nightly=true\nnet.port=8080\ndisplay.width=1920\n" {
 		t.Errorf("after unset: %q", out)
 	}
@@ -172,8 +173,8 @@ func TestParseArgs(t *testing.T) {
 		{[]string{"-c", "x.ini"}, cmdLine{path: "x.ini", delim: "."}},
 		{[]string{"-c", "x.ini", "-d", "/", "get", "a/b", "-c"},
 			cmdLine{path: "x.ini", delim: "/", delimSet: true, cmd: "get", args: []string{"a/b", "-c"}}},
-		{[]string{"--config=y.ini", "--delim=:", "dump"},
-			cmdLine{path: "y.ini", delim: ":", delimSet: true, cmd: "dump", args: []string{}}},
+		{[]string{"--config=y.ini", "--delim=:", "list"},
+			cmdLine{path: "y.ini", delim: ":", delimSet: true, cmd: "list", args: []string{}}},
 		{[]string{"--", "get", "-odd"}, cmdLine{path: "config.ini", delim: ".", cmd: "get", args: []string{"-odd"}}},
 		{[]string{"--version"}, cmdLine{path: "config.ini", delim: ".", early: "version"}},
 	}

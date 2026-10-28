@@ -1,10 +1,10 @@
 package main
 
-// inirepl - an experimental cross-platform REPL for editing an INI file
+// ezconfig - an experimental cross-platform REPL for editing an INI file
 // in memory, with tab completion of commands, sections and keys, plus a
 // one-shot mode for scripts and other programs (see oneshot.go).
 //
-// usage: inirepl [-c FILE] [-d CHAR] [COMMAND [ARGS...]]
+// usage: ezconfig [-c FILE] [-d CHAR] [COMMAND [ARGS...]]
 
 import (
 	"errors"
@@ -27,11 +27,14 @@ get KEY...         print values
 unset KEY...       remove keys
 wipe SECTION...    remove sections (asks first)
 copy SRC DEST      copy a section to a new one
-keys [SECTION]     list root keys, or the keys of SECTION
+move SRC DEST      move or rename a section
+keys [SECTION]     list key names for everything, or for SECTION
 sections           list section names
-dump [SECTION]     print KEY=VALUE lines for everything, or for SECTION
-json [SECTION]     print everything, or SECTION, as JSON
-status             show the file and unsaved changes
+list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
+dump [SECTION]     print everything, or SECTION, as JSON
+status             show file details and session settings
+changes [SECTION]  show unsaved changes
+path               show the config's full path
 save [FILE]        write changes (to FILE if given)
 revert             discard unsaved changes
 history [on|off]   show or switch command history
@@ -41,8 +44,10 @@ help               show this text
 quit               leave
 
 KEY is "name" or "section.name"; "." alone means the root keys.
-Changes stay in memory until saved. Tab completes commands and names.
-Most reading commands, set and unset also work as inirepl COMMAND.`
+Changes stay in memory until saved.
+An asterisk in the prompt indicates unsaved changes.
+Tab completes commands and names.
+Most reading commands, set and unset also work as ezconfig COMMAND.`
 
 // diskState is what we know about the file on disk at load or save.
 type diskState struct {
@@ -60,11 +65,11 @@ func statFile(path string) diskState {
 }
 
 type Repl struct {
-	ini     *Ini
-	path    string // absolute path of the loaded file
-	disk    diskState
-	changes int // edits since load or last save
-	ln      *liner.State
+	ini   *Ini
+	path  string // absolute path of the loaded file
+	disk  diskState
+	saved *Ini // the config as loaded or last saved; unsaved changes are the difference
+	ln    *liner.State
 
 	interactive bool     // stdin is a terminal; only then is history recorded
 	session     []string // commands typed this session (for `history on`)
@@ -130,7 +135,7 @@ func parseArgs(argv []string) (cmdLine, error) {
 func main() {
 	cl, err := parseArgs(os.Args[1:])
 	if err != nil {
-		die(exitArgs, "%v (try inirepl help)", err)
+		die(exitArgs, "%v (try ezconfig help)", err)
 	}
 	if cl.early != "" {
 		os.Exit(oneShot("", ".", cl.early, nil, os.Stdout, os.Stderr))
@@ -166,7 +171,7 @@ func main() {
 		}
 		die(exitFile, "%s: %v", path, err)
 	}
-	r := &Repl{ini: ini, path: path, disk: statFile(path), interactive: isTerminal(os.Stdin)}
+	r := &Repl{ini: ini, saved: ini.Clone(), path: path, disk: statFile(path), interactive: isTerminal(os.Stdin)}
 
 	if r.disk.exists {
 		total, _ := ini.KeyCount()
@@ -180,20 +185,21 @@ func main() {
 	defer r.ln.Close()
 	r.ln.SetTabCompletionStyle(liner.TabPrints)
 	r.ln.SetWordCompleter(r.complete)
+	r.migrateOldDir()
 	r.offerLegacy()
 	r.loadHistory()
 	r.warnDelim()
 
 	for {
-		line, err := r.ln.Prompt("> ")
+		line, err := r.ln.Prompt(r.prompt())
 		if errors.Is(err, io.EOF) {
-			if r.changes > 0 {
-				errorf("%s discarded", plural(r.changes, "unsaved change"))
+			if n := r.unsaved(); n > 0 {
+				errorf("%s discarded", plural(n, "unsaved change"))
 			}
 			return
 		}
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "inirepl:", err)
+			fmt.Fprintln(os.Stderr, "ezconfig:", err)
 			return
 		}
 		line = strings.TrimSpace(line)
@@ -224,9 +230,7 @@ func (r *Repl) exec(line string) bool {
 		}
 		if err := r.ini.Set(path, strings.TrimSpace(value)); err != nil {
 			errorf("%v", err)
-			break
 		}
-		r.changed(1)
 
 	case "get":
 		if len(args) == 0 {
@@ -247,9 +251,7 @@ func (r *Repl) exec(line string) bool {
 			break
 		}
 		for _, p := range args {
-			if r.ini.Unset(p) {
-				r.changed(1)
-			} else {
+			if !r.ini.Unset(p) {
 				errorf("not found: %s", p)
 			}
 		}
@@ -272,7 +274,6 @@ func (r *Repl) exec(line string) bool {
 				}
 				if r.confirm(fmt.Sprintf("wipe root keys (%s)?", plural(len(keys), "key"))) {
 					r.ini.ClearRoot()
-					r.changed(1)
 				}
 				continue
 			}
@@ -280,7 +281,6 @@ func (r *Repl) exec(line string) bool {
 				continue
 			}
 			r.ini.UnsetSection(name)
-			r.changed(1)
 		}
 
 	case "copy":
@@ -295,7 +295,29 @@ func (r *Repl) exec(line string) bool {
 		keys, _ := r.ini.Keys(args[1])
 		fmt.Printf("copied %s to %s (%s)\n", r.sectionLabel(args[0]), r.sectionLabel(args[1]),
 			plural(len(keys), "key"))
-		r.changed(1)
+
+	case "move":
+		if len(args) != 2 {
+			errorf("usage: move SRC DEST")
+			break
+		}
+		keys, _ := r.ini.Keys(args[0])
+		if err := r.ini.MoveSection(args[0], args[1]); err != nil {
+			errorf("move: %v", err)
+			break
+		}
+		fmt.Printf("moved %s to %s (%s)\n", r.sectionLabel(args[0]), r.sectionLabel(args[1]),
+			plural(len(keys), "key"))
+
+	case "changes":
+		r.changesCmd(args)
+
+	case "path":
+		if len(args) > 0 {
+			errorf("usage: path")
+			break
+		}
+		fmt.Println(r.path)
 
 	case "history":
 		r.historyCmd(args)
@@ -308,7 +330,7 @@ func (r *Repl) exec(line string) bool {
 			errorf("usage: keys [SECTION]")
 			break
 		}
-		keys, ok := r.ini.Keys(firstOr(args, ""))
+		keys, ok := r.ini.KeyPaths(firstOr(args, ""))
 		if !ok {
 			errorf("no such section: %s", args[0])
 			break
@@ -318,9 +340,9 @@ func (r *Repl) exec(line string) bool {
 	case "sections":
 		printLines(r.ini.Sections())
 
-	case "dump":
+	case "list":
 		if len(args) > 1 {
-			errorf("usage: dump [SECTION]")
+			errorf("usage: list [SECTION]")
 			break
 		}
 		lines, ok := r.ini.List(firstOr(args, ""))
@@ -330,9 +352,9 @@ func (r *Repl) exec(line string) bool {
 		}
 		printLines(lines)
 
-	case "json":
+	case "dump":
 		if len(args) > 1 {
-			errorf("usage: json [SECTION]")
+			errorf("usage: dump [SECTION]")
 			break
 		}
 		out, ok, err := r.ini.JSON(firstOr(args, ""))
@@ -341,7 +363,7 @@ func (r *Repl) exec(line string) bool {
 			break
 		}
 		if err != nil {
-			errorf("json: %v", err)
+			errorf("dump: %v", err)
 			break
 		}
 		fmt.Print(out)
@@ -357,7 +379,7 @@ func (r *Repl) exec(line string) bool {
 		r.save(firstOr(args, ""))
 
 	case "revert":
-		if r.changes > 0 && !r.confirm("discard "+plural(r.changes, "unsaved change")+" and reload?") {
+		if n := r.unsaved(); n > 0 && !r.confirm("discard "+plural(n, "unsaved change")+" and reload?") {
 			break
 		}
 		ini, err := LoadIni(r.path, r.ini.delim)
@@ -365,12 +387,12 @@ func (r *Repl) exec(line string) bool {
 			errorf("revert: %v", err)
 			break
 		}
-		r.ini, r.disk, r.changes = ini, statFile(r.path), 0
+		r.ini, r.saved, r.disk = ini, ini.Clone(), statFile(r.path)
 		fmt.Printf("reloaded %s\n", r.path)
 		r.warnDelim()
 
 	case "version":
-		fmt.Println("inirepl", version)
+		fmt.Println("ezconfig", version)
 
 	case "help", "?":
 		fmt.Println(helpText)
@@ -379,7 +401,7 @@ func (r *Repl) exec(line string) bool {
 		}
 
 	case "quit", "exit":
-		if r.changes > 0 && !r.confirm("discard "+plural(r.changes, "unsaved change")+" and quit?") {
+		if n := r.unsaved(); n > 0 && !r.confirm("discard "+plural(n, "unsaved change")+" and quit?") {
 			break
 		}
 		return true
@@ -428,14 +450,6 @@ func (r *Repl) sectionLabel(name string) string {
 	return name
 }
 
-// changed records n edits and announces the switch to having unsaved changes.
-func (r *Repl) changed(n int) {
-	if r.changes == 0 {
-		fmt.Println("unsaved changes (use save, or revert)")
-	}
-	r.changes += n
-}
-
 // save writes to target, or to the loaded file when target is "".
 func (r *Repl) save(target string) {
 	toLoaded := target == ""
@@ -456,8 +470,8 @@ func (r *Repl) save(target string) {
 		fmt.Printf("saved a copy to %s\n", target)
 		return
 	}
-	fmt.Printf("saved %s to %s\n", plural(r.changes, "change"), filepath.Base(r.path))
-	r.disk, r.changes = statFile(r.path), 0
+	fmt.Printf("saved %s to %s\n", plural(r.unsaved(), "change"), filepath.Base(r.path))
+	r.saved, r.disk = r.ini.Clone(), statFile(r.path)
 }
 
 func (r *Repl) changedOnDisk() bool {
@@ -475,8 +489,8 @@ func (r *Repl) status() {
 		fmt.Println("on disk: no, will be created on save")
 	}
 	fmt.Println("changed on disk since load:", yesNo(r.changedOnDisk()))
-	if r.changes > 0 {
-		fmt.Printf("unsaved changes: yes (%d)\n", r.changes)
+	if n := r.unsaved(); n > 0 {
+		fmt.Printf("unsaved changes: yes (%d)\n", n)
 	} else {
 		fmt.Println("unsaved changes: no")
 	}
@@ -506,7 +520,7 @@ func writable(path string) bool {
 	} else if !os.IsNotExist(err) {
 		return false
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".inirepl-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".ezconfig-*")
 	if err != nil {
 		return false
 	}
@@ -567,7 +581,7 @@ func errorf(format string, a ...any) {
 
 // die reports a startup error and exits with code.
 func die(code int, format string, a ...any) {
-	fmt.Fprintf(os.Stderr, "inirepl: "+format+"\n", a...)
+	fmt.Fprintf(os.Stderr, "ezconfig: "+format+"\n", a...)
 	os.Exit(code)
 }
 

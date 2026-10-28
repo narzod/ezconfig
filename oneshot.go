@@ -2,10 +2,10 @@ package main
 
 // oneshot.go - run a single command from the command line and exit.
 //
-//	inirepl [-c FILE] [-d CHAR] COMMAND [ARGS...]
+//	ezconfig [-c FILE] [-d CHAR] COMMAND [ARGS...]
 //
 // One-shot mode offers every command that reads, plus set and unset:
-// get, keys, sections, dump, json, set, unset (and help, version).
+// get, keys, sections, list, dump, set, unset (and help, version).
 // Everything else stays in the interactive shell.
 //
 // stdout carries only data; messages go to stderr. Writes are
@@ -32,16 +32,16 @@ const (
 // recognised so they can be refused with a helpful message.
 var (
 	oneShotCommands = map[string]bool{
-		"get": true, "keys": true, "sections": true, "dump": true, "json": true,
+		"get": true, "keys": true, "sections": true, "list": true, "dump": true,
 		"set": true, "unset": true, "help": true, "version": true,
 	}
 	shellOnly = map[string]bool{
-		"wipe": true, "copy": true, "status": true, "save": true, "revert": true,
-		"history": true, "delim": true, "quit": true, "exit": true,
+		"wipe": true, "copy": true, "move": true, "status": true, "save": true, "revert": true,
+		"history": true, "delim": true, "changes": true, "path": true, "quit": true, "exit": true,
 	}
 )
 
-const usage = `usage: inirepl [-c FILE] [-d CHAR] [COMMAND [ARGS...]]
+const usage = `usage: ezconfig [-c FILE] [-d CHAR] [COMMAND [ARGS...]]
 
 Without a command, starts the interactive shell.
 
@@ -49,10 +49,10 @@ commands:
 get KEY...         print values
 set KEY=VALUE...   set values and save
 unset KEY...       remove keys and save
-keys [SECTION]     list root keys, or the keys of SECTION
+keys [SECTION]     list key names for everything, or for SECTION
 sections           list section names
-dump [SECTION]     print KEY=VALUE lines for everything, or for SECTION
-json [SECTION]     print everything, or SECTION, as JSON
+list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
+dump [SECTION]     print everything, or SECTION, as JSON
 help               show this text
 version            show the program version
 
@@ -71,7 +71,7 @@ exit status:
 // exit status. Output goes to stdout, messages to stderr.
 func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) int {
 	fail := func(code int, format string, a ...any) int {
-		fmt.Fprintf(stderr, "inirepl: "+format+"\n", a...)
+		fmt.Fprintf(stderr, "ezconfig: "+format+"\n", a...)
 		return code
 	}
 
@@ -80,8 +80,16 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 		fmt.Fprintln(stdout, usage)
 		return exitOK
 	case "version":
-		fmt.Fprintln(stdout, "inirepl", version)
+		fmt.Fprintln(stdout, "ezconfig", version)
 		return exitOK
+	}
+
+	// Refuse commands that don't belong here before touching the file.
+	if !oneShotCommands[cmd] {
+		if shellOnly[cmd] {
+			return fail(exitArgs, "%s is only available in the interactive shell (run ezconfig without a command)", cmd)
+		}
+		return fail(exitArgs, "unknown command: %s (try ezconfig help)", cmd)
 	}
 
 	// Load the config. Only set may start from a missing file.
@@ -102,9 +110,9 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 	// notFound reports missing names, with a hint when the delimiter
 	// itself appears in names in this config.
 	notFound := func(names []string) int {
-		fmt.Fprintf(stderr, "inirepl: not found: %s\n", strings.Join(names, ", "))
+		fmt.Fprintf(stderr, "ezconfig: not found: %s\n", strings.Join(names, ", "))
 		if n := ini.NamesContaining(delim); n > 0 {
-			fmt.Fprintf(stderr, "inirepl: note: %s %q; try -d with another character\n",
+			fmt.Fprintf(stderr, "ezconfig: note: %s %q; try -d with another character\n",
 				count(n, "name contains", "names contain"), delim)
 		}
 		return exitNotFound
@@ -132,14 +140,14 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 		}
 		return exitOK
 
-	case "keys", "dump":
+	case "keys", "list":
 		if len(args) > 1 {
 			return fail(exitArgs, "usage: %s [SECTION]", cmd)
 		}
 		var lines []string
 		var ok bool
 		if cmd == "keys" {
-			lines, ok = ini.Keys(firstOr(args, ""))
+			lines, ok = ini.KeyPaths(firstOr(args, ""))
 		} else {
 			lines, ok = ini.List(firstOr(args, ""))
 		}
@@ -160,16 +168,16 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 		}
 		return exitOK
 
-	case "json":
+	case "dump":
 		if len(args) > 1 {
-			return fail(exitArgs, "usage: json [SECTION]")
+			return fail(exitArgs, "usage: dump [SECTION]")
 		}
 		out, ok, err := ini.JSON(firstOr(args, ""))
 		if !ok {
 			return notFound(args)
 		}
 		if err != nil {
-			return fail(exitSyntax, "json: %v", err)
+			return fail(exitSyntax, "dump: %v", err)
 		}
 		fmt.Fprint(stdout, out)
 		return exitOK
@@ -206,7 +214,7 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 			return fail(exitFile, "save %s: %v", path, err)
 		}
 		if missing {
-			fmt.Fprintf(stderr, "inirepl: created %s\n", path)
+			fmt.Fprintf(stderr, "ezconfig: created %s\n", path)
 		}
 		return exitOK
 
@@ -233,7 +241,7 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 	}
 
 	if shellOnly[cmd] {
-		return fail(exitArgs, "%s is only available in the interactive shell (run inirepl without a command)", cmd)
+		return fail(exitArgs, "%s is only available in the interactive shell (run ezconfig without a command)", cmd)
 	}
-	return fail(exitArgs, "unknown command: %s (try inirepl help)", cmd)
+	return fail(exitArgs, "unknown command: %s (try ezconfig help)", cmd)
 }

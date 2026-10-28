@@ -11,8 +11,8 @@ package main
 import "strings"
 
 var commands = []string{
-	"set", "get", "unset", "wipe", "copy", "keys", "sections", "dump", "json",
-	"status", "save", "revert", "history", "delim", "version", "help", "quit",
+	"set", "get", "unset", "wipe", "copy", "move", "keys", "sections", "list", "dump",
+	"status", "changes", "path", "save", "revert", "history", "delim", "version", "help", "quit",
 }
 
 func (r *Repl) complete(line string, pos int) (head string, cands []string, tail string) {
@@ -33,7 +33,7 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 	case "wipe":
 		cands = r.sectionNames(word, " ")
 
-	case "copy":
+	case "copy", "move":
 		if len(args) == 1 { // SRC only; DEST is a new name
 			cands = r.sectionNames(word, " ")
 		}
@@ -67,7 +67,7 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 			cands = r.keyPaths(word, "=")
 		}
 
-	case "keys", "dump", "json":
+	case "keys", "list", "dump", "changes":
 		if len(args) == 1 {
 			cands = r.sectionNames(word, "")
 		}
