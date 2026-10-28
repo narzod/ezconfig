@@ -1,0 +1,6 @@
+# build output
+*.exe
+/ezconfig
+/inirepl
+/dist/
+go.sum
