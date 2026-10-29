@@ -21,6 +21,10 @@ it automatically. Run these from inside the folder. On Windows, `echo
 
 Then open the shell with `ezconfig` and try:
 
+- `setup`: asks for each player, schedule and display value in the order
+  `[@setup] sections=` gives; Enter keeps a value, Ctrl+C stops, and
+  `changes` shows what was answered
+- `setup schedule`: just the one section
 - `set schedule.on` (no `=`): asks for the time, says what format it needs,
   and asks again after an answer like 7am; Enter alone keeps the value
 - `set display.rotation`, then Tab twice at the question: lists 0 90 180 270
@@ -34,7 +38,8 @@ Then open the shell with `ezconfig` and try:
 
 ## backup
 
-Root keys (retries, verify) are described by `[@section .]`.
+Root keys (retries, verify) are described by `[@section .]`. Its `[@setup]`
+has no `sections=`, so `setup` walks every section with rules, root first.
 
     ezconfig list                          mode shows as incremental, verify as true
     ezconfig get retries verify            root keys with defaults: 3 and true

@@ -40,7 +40,7 @@ var (
 	}
 	shellOnly = map[string]bool{
 		"wipe": true, "copy": true, "move": true, "status": true, "save": true, "revert": true,
-		"history": true, "delim": true, "changes": true, "path": true, "quit": true, "exit": true,
+		"history": true, "delim": true, "setup": true, "changes": true, "path": true, "quit": true, "exit": true,
 	}
 )
 

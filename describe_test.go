@@ -139,3 +139,76 @@ func TestAskSet(t *testing.T) {
 		return "", nil
 	})
 }
+
+func TestSetup(t *testing.T) {
+	dir := t.TempDir()
+	src := sectionSchema + `
+[@setup]
+title=Player setup
+sections=app,.
+`
+	s, err := LoadSchema(writeFile(t, dir, "schema.ini", src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ini := NewIni()
+	ini.parse(strings.NewReader("[app]\nextra=1\n"))
+	r := &Repl{ini: ini, schema: s, path: filepath.Join(dir, "config.ini"), interactive: true}
+
+	if got := s.SetupSections(ini); !reflect.DeepEqual(got, []string{"app", ""}) {
+		t.Errorf("SetupSections: %q", got)
+	}
+	// Keys with rules (or named by keys=), in KeysIn order; extra has no rule.
+	if got := s.SetupKeys(ini, "app"); !reflect.DeepEqual(got, []string{"locale", "mode", "retries"}) {
+		t.Errorf("SetupKeys: %q", got)
+	}
+
+	var asked []string
+	answers := map[string]string{"app.locale> ": "", "app.mode> ": "desktop", "app.retries> ": "3", "name> ": "front"}
+	r.setup(nil, func(p string, _ []string) (string, error) {
+		asked = append(asked, p)
+		return answers[p], nil
+	})
+	if !reflect.DeepEqual(asked, []string{"app.locale> ", "app.mode> ", "app.retries> ", "name> "}) {
+		t.Errorf("asked: %q", asked)
+	}
+	for path, want := range map[string]string{"app.mode": "desktop", "app.retries": "3", "name": "front"} {
+		if v, _ := ini.Get(path); v != want {
+			t.Errorf("%s = %q, want %q", path, v, want)
+		}
+	}
+	if _, ok := ini.Get("app.locale"); ok {
+		t.Error("Enter wrote the default into the config")
+	}
+
+	// setup SECTION walks one section; Ctrl+C stops the walk.
+	asked = nil
+	r.setup([]string{"app"}, func(p string, _ []string) (string, error) {
+		asked = append(asked, p)
+		return "", errors.New("aborted")
+	})
+	if len(asked) != 1 {
+		t.Errorf("after cancel: asked %q", asked)
+	}
+
+	// Without [@setup] sections=, every section with rules, root first.
+	plain, _ := LoadSchema(writeFile(t, dir, "plain.ini", sectionSchema))
+	if got := plain.SetupSections(ini); !reflect.DeepEqual(got, []string{"", "app"}) {
+		t.Errorf("default sections: %q", got)
+	}
+}
+
+func TestSetupErrors(t *testing.T) {
+	cases := map[string]string{
+		"[@setup x]\ntitle=a\n":                 "takes no name",
+		"[@setup]\ncolour=red\n":                "unknown field",
+		"[@setup]\nsections=nope\n":             "nope, which has no rules",
+		"[@rule a.b]\n[@setup]\nsections=a,.\n": "names ., which",
+	}
+	for src, want := range cases {
+		_, err := LoadSchema(writeFile(t, t.TempDir(), "schema.ini", src))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: got %v, want an error containing %q", src, err, want)
+		}
+	}
+}

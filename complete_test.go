@@ -30,8 +30,8 @@ func TestComplete(t *testing.T) {
 		want []string
 	}{
 		{"", []string{"changes ", "check ", "copy ", "delim ", "describe ", "dump ", "get ", "help ", "history ", "keys ", "list ", "move ", "path ", "quit ",
-			"revert ", "save ", "sections ", "set ", "status ", "unset ", "version ", "wipe "}},
-		{"se", []string{"sections ", "set "}},
+			"revert ", "save ", "sections ", "set ", "setup ", "status ", "unset ", "version ", "wipe "}},
+		{"se", []string{"sections ", "set ", "setup "}},
 		{"delim ", []string{"/", ":", "|"}},
 		{"d", []string{"delim ", "describe ", "dump "}},
 		{"du", []string{"dump "}},

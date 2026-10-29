@@ -19,19 +19,35 @@ import (
 	"github.com/peterh/liner"
 )
 
-// askSet explains key path and asks for its value using read, which
-// returns an error when the person cancels.
-func (r *Repl) askSet(path string, read func(prompt string, choices []string) (string, error)) {
+// askOutcome is how one question ended.
+type askOutcome int
+
+const (
+	askKept      askOutcome = iota // Enter alone, the same value, or not asked
+	askChanged                     // a new value was set
+	askCancelled                   // Ctrl+C or Ctrl+D
+)
+
+// reader asks one question; it returns an error when the person cancels.
+type reader func(prompt string, choices []string) (string, error)
+
+// askSet explains key path and asks for its value using read.
+func (r *Repl) askSet(path string, read reader) askOutcome {
 	sec, key := r.ini.splitPath(path)
-	addr := address(sec, key, r.ini.delim)
 	if strings.TrimSpace(key) == "" {
 		errorf("usage: set KEY=VALUE, or set KEY to be asked")
-		return
+		return askKept
 	}
 	if !r.interactive {
 		errorf("set %s: asking for a value needs a terminal; use set %s=VALUE", path, path)
-		return
+		return askKept
 	}
+	return r.ask(sec, key, read)
+}
+
+// ask explains one key and asks for its value.
+func (r *Repl) ask(sec, key string, read reader) askOutcome {
+	addr := address(sec, key, r.ini.delim)
 	rl := r.schema.ruleFor(sec, key)
 	if rl != nil {
 		switch {
@@ -52,12 +68,12 @@ func (r *Repl) askSet(path string, read func(prompt string, choices []string) (s
 		answer, err := read(addr+"> ", choices)
 		if err != nil {
 			fmt.Println("cancelled")
-			return
+			return askCancelled
 		}
 		answer = strings.TrimSpace(answer)
 		if answer == "" {
 			fmt.Println("unchanged")
-			return
+			return askKept
 		}
 		value := answer
 		if rl != nil {
@@ -68,7 +84,8 @@ func (r *Repl) askSet(path string, read func(prompt string, choices []string) (s
 			}
 			value = v
 		}
-		if err := r.ini.Set(path, value); err != nil {
+		old, had := valueAt(r.ini, sec, key)
+		if err := r.ini.Set(addr, value); err != nil {
 			errorf("%v", err)
 			continue
 		}
@@ -78,8 +95,75 @@ func (r *Repl) askSet(path string, read func(prompt string, choices []string) (s
 			r.ln.AppendHistory(resolved)
 		}
 		r.record(resolved)
+		if had && old == value {
+			return askKept
+		}
+		return askChanged
+	}
+}
+
+// setup walks through the schema's sections, or just one, asking for each
+// key in turn. Answers stay in memory like any other change.
+func (r *Repl) setup(args []string, read reader) {
+	switch {
+	case r.schema == nil:
+		errorf("no schema (put %s next to the config, or start with -s FILE)", schemaName)
+		return
+	case len(args) > 1:
+		errorf("usage: setup [SECTION]")
+		return
+	case !r.interactive:
+		errorf("setup needs a terminal")
 		return
 	}
+	var sections []string
+	if len(args) == 1 {
+		name := args[0]
+		if name == r.ini.delim {
+			name = ""
+		}
+		if len(r.schema.SetupKeys(r.ini, name)) == 0 {
+			errorf("nothing to set up in %s", args[0])
+			return
+		}
+		sections = []string{name}
+	} else {
+		sections = r.schema.SetupSections(r.ini)
+		if su := r.schema.setup; su != nil {
+			if su.title != "" {
+				fmt.Println(su.title)
+			}
+			if su.doc != "" {
+				fmt.Println(su.doc)
+			}
+		}
+	}
+	fmt.Println("Enter keeps a value; Ctrl+C stops.")
+
+	changed := 0
+	for _, sec := range sections {
+		fmt.Println()
+		fmt.Println(r.schema.SectionHeading(sec))
+		for _, key := range r.schema.SetupKeys(r.ini, sec) {
+			fmt.Println()
+			switch r.ask(sec, key, read) {
+			case askChanged:
+				changed++
+			case askCancelled:
+				fmt.Printf("setup stopped: %s\n", r.setupSummary(changed))
+				return
+			}
+		}
+	}
+	fmt.Println()
+	fmt.Printf("setup finished: %s\n", r.setupSummary(changed))
+}
+
+func (r *Repl) setupSummary(changed int) string {
+	if changed == 0 {
+		return "no changes"
+	}
+	return plural(changed, "change") + " (type save to keep them)"
 }
 
 // nowText describes a key's current value and where it comes from.

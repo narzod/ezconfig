@@ -34,6 +34,7 @@ list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 dump [SECTION]     print everything, or SECTION, as JSON
 check              report values that break the schema
 describe [NAME...] explain keys, or list a section's keys
+setup [SECTION]    ask for each value in turn, as the schema describes
 status             show file details and session settings
 changes [SECTION]  show unsaved changes
 path               show the config's full path
@@ -461,6 +462,9 @@ func (r *Repl) exec(line string) bool {
 			}
 			printLines(lines)
 		}
+
+	case "setup":
+		r.setup(args, r.readAnswer)
 
 	case "status":
 		r.status()

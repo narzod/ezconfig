@@ -17,7 +17,7 @@ import "strings"
 
 var commands = []string{
 	"set", "get", "unset", "wipe", "copy", "move", "keys", "sections", "list", "dump",
-	"check", "describe", "status", "changes", "path", "save", "revert", "history", "delim", "version", "help", "quit",
+	"check", "describe", "setup", "status", "changes", "path", "save", "revert", "history", "delim", "version", "help", "quit",
 }
 
 func (r *Repl) complete(line string, pos int) (head string, cands []string, tail string) {
@@ -103,6 +103,11 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 	case "changes":
 		if len(args) == 1 {
 			cands = sectionNames(r.ini, word, "")
+		}
+
+	case "setup":
+		if len(args) == 1 {
+			cands = sectionNames(r.knownKeys(), word, "")
 		}
 	}
 	return head, cands, tail

@@ -28,6 +28,10 @@ blocks starting with `@` describe the config:
     prompt=Which port should the player listen on?
     doc=Port the player listens on
 
+A `[@setup]` block (with `title`, `doc` and `sections=`) sets up the
+`setup` command in the shell, which walks through the sections asking for
+each value, as `set KEY` does; `setup SECTION` does one section.
+
 Rules have a type (string, int, float, bool, enum) with min, max, values,
 pattern and required, plus `format` (how to write the value, in words, shown
 instead of the pattern), `doc` and `prompt`. Sections have `title`, `doc` and
