@@ -398,9 +398,3 @@ func (r *Repl) delimCmd(args []string) {
 	}
 	r.warnDelim()
 }
-
-// isTerminal reports whether f is an interactive console or terminal.
-func isTerminal(f *os.File) bool {
-	fi, err := f.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
-}

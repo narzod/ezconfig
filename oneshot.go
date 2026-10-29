@@ -23,12 +23,13 @@ import (
 
 // Exit codes, shared with validini's table.
 const (
-	exitOK       = 0
-	exitInvalid  = 1 // a value breaks the schema
-	exitSyntax   = 2 // INI syntax error in the config or schema
-	exitFile     = 3 // config or schema unreadable (or config unwritable)
-	exitArgs     = 4 // bad arguments
-	exitNotFound = 5 // key or section not found
+	exitOK        = 0
+	exitInvalid   = 1 // a value breaks the schema
+	exitSyntax    = 2 // INI syntax error in the config or schema
+	exitFile      = 3 // config or schema unreadable (or config unwritable)
+	exitArgs      = 4 // bad arguments
+	exitNotFound  = 5 // key or section not found
+	exitCancelled = 6 // setup stopped or not saved; nothing written
 )
 
 // oneShotCommands are available from the command line; shellOnly are
@@ -36,11 +37,11 @@ const (
 var (
 	oneShotCommands = map[string]bool{
 		"get": true, "keys": true, "sections": true, "list": true, "dump": true,
-		"check": true, "describe": true, "set": true, "unset": true, "help": true, "version": true,
+		"check": true, "describe": true, "setup": true, "set": true, "unset": true, "help": true, "version": true,
 	}
 	shellOnly = map[string]bool{
 		"wipe": true, "copy": true, "move": true, "status": true, "save": true, "revert": true,
-		"history": true, "delim": true, "setup": true, "changes": true, "path": true, "quit": true, "exit": true,
+		"history": true, "delim": true, "changes": true, "path": true, "quit": true, "exit": true,
 	}
 )
 
@@ -58,6 +59,7 @@ list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 dump [SECTION]     print everything, or SECTION, as JSON
 check              report values that break the schema
 describe [NAME...] explain keys, or list a section's keys
+setup [SECTION]    ask for each value, then offer to save (needs a terminal)
 help               show this text
 version            show the program version
 
@@ -72,7 +74,8 @@ exit status:
 2  syntax error in the config or schema
 3  config or schema missing or unreadable
 4  bad arguments
-5  key or section not found`
+5  key or section not found
+6  setup stopped, or its changes not saved`
 
 // oneShot runs cmd with args against the config at path and returns the
 // exit status. Output goes to stdout, messages to stderr.
@@ -164,6 +167,9 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 	}
 
 	switch cmd {
+	case "setup": // reached only without a terminal; main runs it otherwise
+		return fail(exitArgs, "setup needs a terminal; use set KEY=VALUE in scripts")
+
 	case "get":
 		if len(args) == 0 {
 			return fail(exitArgs, "usage: get KEY...")

@@ -105,7 +105,7 @@ func TestAskSet(t *testing.T) {
 	answers := []string{"Kiosk Mode", "KIOSK"}
 	var prompts []string
 	var offered []string
-	r.askSet("app.mode", func(p string, choices []string) (string, error) {
+	r.askSet("app.mode", func(p string, choices, _ []string) (string, error) {
 		prompts = append(prompts, p)
 		offered = choices
 		a := answers[0]
@@ -126,15 +126,15 @@ func TestAskSet(t *testing.T) {
 	}
 
 	// Enter keeps the value; cancelling changes nothing.
-	r.askSet("app.mode", func(string, []string) (string, error) { return "", nil })
-	r.askSet("app.mode", func(string, []string) (string, error) { return "desktop", errors.New("aborted") })
+	r.askSet("app.mode", func(string, []string, []string) (string, error) { return "", nil })
+	r.askSet("app.mode", func(string, []string, []string) (string, error) { return "desktop", errors.New("aborted") })
 	if v, _ := ini.Get("app.mode"); v != "kiosk" {
 		t.Errorf("after Enter and cancel: %q", v)
 	}
 
 	// Without a terminal, nothing is asked.
 	r.interactive = false
-	r.askSet("app.locale", func(string, []string) (string, error) {
+	r.askSet("app.locale", func(string, []string, []string) (string, error) {
 		t.Error("asked without a terminal")
 		return "", nil
 	})
@@ -153,7 +153,7 @@ sections=app,.
 	}
 	ini := NewIni()
 	ini.parse(strings.NewReader("[app]\nextra=1\n"))
-	r := &Repl{ini: ini, schema: s, path: filepath.Join(dir, "config.ini"), interactive: true}
+	r := &Repl{ini: ini, saved: ini.Clone(), schema: s, path: filepath.Join(dir, "config.ini"), interactive: true}
 
 	if got := s.SetupSections(ini); !reflect.DeepEqual(got, []string{"app", ""}) {
 		t.Errorf("SetupSections: %q", got)
@@ -164,13 +164,34 @@ sections=app,.
 	}
 
 	var asked []string
-	answers := map[string]string{"app.locale> ": "", "app.mode> ": "desktop", "app.retries> ": "3", "name> ": "front"}
-	r.setup(nil, func(p string, _ []string) (string, error) {
+	var recalled [][]string
+	answers := map[string][]string{
+		"app.locale> ": {""}, "app.mode> ": {"desktop"},
+		"app.retries> ": {"", "3"}, // required with no value: Enter is refused
+		"name> ":        {"front"},
+	}
+	read := func(p string, _, recall []string) (string, error) {
 		asked = append(asked, p)
-		return answers[p], nil
-	})
-	if !reflect.DeepEqual(asked, []string{"app.locale> ", "app.mode> ", "app.retries> ", "name> "}) {
+		recalled = append(recalled, recall)
+		a := answers[p][0]
+		answers[p] = answers[p][1:]
+		return a, nil
+	}
+	var question string
+	saves := 0
+	yes := func(q string) bool { question = q; return true }
+	save := func() bool { saves++; return true }
+	if got := r.setup(nil, read, yes, save, false); got != setupDone {
+		t.Errorf("setup: result %d", got)
+	}
+	if !reflect.DeepEqual(asked, []string{"app.locale> ", "app.mode> ", "app.retries> ", "app.retries> ", "name> "}) {
 		t.Errorf("asked: %q", asked)
+	}
+	if !reflect.DeepEqual(recalled[0], []string{"en-US"}) { // the default
+		t.Errorf("recall for app.locale: %q", recalled[0])
+	}
+	if question != "save 3 changes to config.ini?" || saves != 1 {
+		t.Errorf("save question %q, saves %d", question, saves)
 	}
 	for path, want := range map[string]string{"app.mode": "desktop", "app.retries": "3", "name": "front"} {
 		if v, _ := ini.Get(path); v != want {
@@ -180,15 +201,66 @@ sections=app,.
 	if _, ok := ini.Get("app.locale"); ok {
 		t.Error("Enter wrote the default into the config")
 	}
+	if len(r.session) != 0 {
+		t.Errorf("setup answers went into history: %q", r.session)
+	}
+
+	// The up arrow offers the current value, then the default.
+	if got := r.recallFor("app", "locale"); !reflect.DeepEqual(got, []string{"en-US"}) {
+		t.Errorf("recall, unset: %q", got)
+	}
+	ini.Set("app.locale", "fr-CA")
+	if got := r.recallFor("app", "locale"); !reflect.DeepEqual(got, []string{"fr-CA", "en-US"}) {
+		t.Errorf("recall, set: %q", got)
+	}
 
 	// setup SECTION walks one section; Ctrl+C stops the walk.
 	asked = nil
-	r.setup([]string{"app"}, func(p string, _ []string) (string, error) {
+	stop := func(p string, _, _ []string) (string, error) {
 		asked = append(asked, p)
 		return "", errors.New("aborted")
-	})
-	if len(asked) != 1 {
-		t.Errorf("after cancel: asked %q", asked)
+	}
+	if got := r.setup([]string{"app"}, stop, yes, save, true); got != setupCancelled || len(asked) != 1 {
+		t.Errorf("one-shot cancel: result %d, asked %q", got, asked)
+	}
+	if got := r.setup([]string{"app"}, stop, yes, save, false); got != setupUnsaved {
+		t.Errorf("shell cancel: result %d", got)
+	}
+
+	// Earlier unsaved changes are counted in the save question.
+	r.saved = ini.Clone()
+	ini.Set("app.extra", "2")
+	r.setup([]string{"app"}, func(p string, _, _ []string) (string, error) {
+		if p == "app.mode> " {
+			return "kiosk", nil
+		}
+		return "", nil
+	}, yes, func() bool { return true }, false)
+	if question != "save 2 changes to config.ini (1 made before setup)?" {
+		t.Errorf("save question with earlier changes: %q", question)
+	}
+	ini.Set("app.mode", "desktop")
+
+	// Declining the save: dropped in one-shot, kept in memory in the shell.
+	no := func(string) bool { return false }
+	change := func(p string, _, _ []string) (string, error) {
+		if p == "app.mode> " {
+			return "kiosk", nil
+		}
+		return "", nil
+	}
+	if got := r.setup([]string{"app"}, change, no, save, true); got != setupCancelled {
+		t.Errorf("one-shot decline: result %d", got)
+	}
+	ini.Set("app.mode", "desktop") // a real one-shot run would have exited, dropping kiosk
+	if got := r.setup([]string{"app"}, change, no, save, false); got != setupUnsaved || saves != 1 {
+		t.Errorf("shell decline: result %d, saves %d", got, saves)
+	}
+
+	// An invalid current value can't be kept with Enter during setup.
+	ini.Set("app.mode", "tablet")
+	if why := r.needsAnswer("app", "mode", s.ruleFor("app", "mode")); why == "" {
+		t.Error("invalid value: Enter should be refused")
 	}
 
 	// Without [@setup] sections=, every section with rules, root first.

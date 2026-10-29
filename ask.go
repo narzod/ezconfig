@@ -1,7 +1,6 @@
 package main
 
-// ask.go - set KEY without "=": explain what the key needs, then ask for
-// its value, asking again after an invalid answer.
+// ask.go - asking for values: set KEY without "=", and setup.
 //
 //	config.ini=> set app.locale
 //	Language and region for dates and numbers
@@ -10,10 +9,20 @@ package main
 //	app.locale> fr-CA
 //
 // Enter alone keeps the current value; Ctrl+C or Ctrl+D cancels. Tab
-// completes the allowed values. To set an empty value, use set KEY=.
+// completes the allowed values, and the up arrow recalls the current value
+// and the default, for editing. To set an empty value, use set KEY=.
+//
+// setup asks about each key of the schema's sections in turn, then shows
+// the changes and asks whether to save them. It runs in the shell or as
+// a one-shot command; either way the shell's history is set aside while
+// questions are asked.
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/peterh/liner"
@@ -28,8 +37,15 @@ const (
 	askCancelled                   // Ctrl+C or Ctrl+D
 )
 
-// reader asks one question; it returns an error when the person cancels.
-type reader func(prompt string, choices []string) (string, error)
+// reader asks one question. Tab offers choices; the up arrow offers
+// recall, most recent first. It returns an error when the person cancels.
+type reader func(prompt string, choices, recall []string) (string, error)
+
+// askOpts adjusts how a question behaves.
+type askOpts struct {
+	insist   bool // setup: Enter can't leave a required key unset or an invalid value in place
+	remember bool // set KEY: put the resulting set command in the shell's history
+}
 
 // askSet explains key path and asks for its value using read.
 func (r *Repl) askSet(path string, read reader) askOutcome {
@@ -42,11 +58,11 @@ func (r *Repl) askSet(path string, read reader) askOutcome {
 		errorf("set %s: asking for a value needs a terminal; use set %s=VALUE", path, path)
 		return askKept
 	}
-	return r.ask(sec, key, read)
+	return r.ask(sec, key, read, askOpts{remember: true})
 }
 
 // ask explains one key and asks for its value.
-func (r *Repl) ask(sec, key string, read reader) askOutcome {
+func (r *Repl) ask(sec, key string, read reader, opts askOpts) askOutcome {
 	addr := address(sec, key, r.ini.delim)
 	rl := r.schema.ruleFor(sec, key)
 	if rl != nil {
@@ -64,14 +80,19 @@ func (r *Repl) ask(sec, key string, read reader) askOutcome {
 	if rl != nil {
 		choices = rl.choices()
 	}
+	old, had := valueAt(r.ini, sec, key)
 	for {
-		answer, err := read(addr+"> ", choices)
+		answer, err := read(addr+"> ", choices, r.recallFor(sec, key))
 		if err != nil {
 			fmt.Println("cancelled")
 			return askCancelled
 		}
 		answer = strings.TrimSpace(answer)
 		if answer == "" {
+			if why := r.needsAnswer(sec, key, rl); opts.insist && why != "" {
+				errorf("%s; type a value (Ctrl+C stops)", why)
+				continue
+			}
 			fmt.Println("unchanged")
 			return askKept
 		}
@@ -84,17 +105,18 @@ func (r *Repl) ask(sec, key string, read reader) askOutcome {
 			}
 			value = v
 		}
-		old, had := valueAt(r.ini, sec, key)
 		if err := r.ini.Set(addr, value); err != nil {
 			errorf("%v", err)
 			continue
 		}
-		// Recall the exact command with the up arrow, and keep it in history.
-		resolved := "set " + addr + "=" + value
-		if r.ln != nil {
-			r.ln.AppendHistory(resolved)
+		if opts.remember {
+			// Recall the exact command with the up arrow, and keep it in history.
+			resolved := "set " + addr + "=" + value
+			if r.ln != nil {
+				r.ln.AppendHistory(resolved)
+			}
+			r.record(resolved)
 		}
-		r.record(resolved)
 		if had && old == value {
 			return askKept
 		}
@@ -102,68 +124,35 @@ func (r *Repl) ask(sec, key string, read reader) askOutcome {
 	}
 }
 
-// setup walks through the schema's sections, or just one, asking for each
-// key in turn. Answers stay in memory like any other change.
-func (r *Repl) setup(args []string, read reader) {
-	switch {
-	case r.schema == nil:
-		errorf("no schema (put %s next to the config, or start with -s FILE)", schemaName)
-		return
-	case len(args) > 1:
-		errorf("usage: setup [SECTION]")
-		return
-	case !r.interactive:
-		errorf("setup needs a terminal")
-		return
+// needsAnswer says why Enter alone isn't enough during setup: the key is
+// required and has no value, or its value breaks the rule. "" if it is.
+func (r *Repl) needsAnswer(sec, key string, rl *rule) string {
+	if rl == nil {
+		return ""
 	}
-	var sections []string
-	if len(args) == 1 {
-		name := args[0]
-		if name == r.ini.delim {
-			name = ""
+	if raw, ok := valueAt(r.ini, sec, key); ok {
+		if _, err := rl.check(raw); err != nil {
+			return "the current value is invalid"
 		}
-		if len(r.schema.SetupKeys(r.ini, name)) == 0 {
-			errorf("nothing to set up in %s", args[0])
-			return
-		}
-		sections = []string{name}
-	} else {
-		sections = r.schema.SetupSections(r.ini)
-		if su := r.schema.setup; su != nil {
-			if su.title != "" {
-				fmt.Println(su.title)
-			}
-			if su.doc != "" {
-				fmt.Println(su.doc)
-			}
-		}
+		return ""
 	}
-	fmt.Println("Enter keeps a value; Ctrl+C stops.")
-
-	changed := 0
-	for _, sec := range sections {
-		fmt.Println()
-		fmt.Println(r.schema.SectionHeading(sec))
-		for _, key := range r.schema.SetupKeys(r.ini, sec) {
-			fmt.Println()
-			switch r.ask(sec, key, read) {
-			case askChanged:
-				changed++
-			case askCancelled:
-				fmt.Printf("setup stopped: %s\n", r.setupSummary(changed))
-				return
-			}
-		}
+	if _, ok := valueAt(r.view(), sec, key); !ok && rl.required {
+		return "a value is required"
 	}
-	fmt.Println()
-	fmt.Printf("setup finished: %s\n", r.setupSummary(changed))
+	return ""
 }
 
-func (r *Repl) setupSummary(changed int) string {
-	if changed == 0 {
-		return "no changes"
+// recallFor is what the up arrow offers: the current value, then the
+// default when it differs. Empty values are left out.
+func (r *Repl) recallFor(sec, key string) []string {
+	var out []string
+	if v, ok := valueAt(r.ini, sec, key); ok && v != "" {
+		out = append(out, v)
 	}
-	return plural(changed, "change") + " (type save to keep them)"
+	if d, ok := r.schema.defaultFor(sec, key); ok && d != "" && (len(out) == 0 || out[0] != d) {
+		out = append(out, d)
+	}
+	return out
 }
 
 // nowText describes a key's current value and where it comes from.
@@ -190,9 +179,16 @@ func (r *Repl) nowText(sec, key string, rl *rule) string {
 	return "not set"
 }
 
-// readAnswer reads one answer with the line editor: Tab completes the
-// given choices, and Ctrl+C or Ctrl+D cancels.
-func (r *Repl) readAnswer(prompt string, choices []string) (string, error) {
+// readAnswer reads one answer with the line editor. Tab completes the
+// given choices; the up arrow recalls only the given values, so the
+// shell's history is set aside for the question and put back after.
+func (r *Repl) readAnswer(prompt string, choices, recall []string) (string, error) {
+	var saved bytes.Buffer
+	r.ln.WriteHistory(&saved)
+	r.ln.ClearHistory()
+	for i := len(recall) - 1; i >= 0; i-- { // most recent last
+		r.ln.AppendHistory(recall[i])
+	}
 	r.ln.SetCtrlCAborts(true)
 	r.ln.SetWordCompleter(func(line string, pos int) (string, []string, string) {
 		var out []string
@@ -206,10 +202,192 @@ func (r *Repl) readAnswer(prompt string, choices []string) (string, error) {
 	defer func() {
 		r.ln.SetCtrlCAborts(false)
 		r.ln.SetWordCompleter(r.complete)
+		r.ln.ClearHistory()
+		r.ln.ReadHistory(&saved)
 	}()
-	answer, err := r.ln.Prompt(prompt)
-	if err == liner.ErrPromptAborted {
-		return "", err
+	return r.ln.Prompt(prompt)
+}
+
+// confirmAnswer asks a yes/no question at the end of setup, without the
+// shell's history on the up arrow; anything but y or yes means no.
+func (r *Repl) confirmAnswer(question string) bool {
+	a, err := r.readAnswer(question+" [y/N] ", []string{"yes", "no"}, nil)
+	a = strings.ToLower(strings.TrimSpace(a))
+	return err == nil && (a == "y" || a == "yes")
+}
+
+// setupResult is how a setup run ended.
+type setupResult int
+
+const (
+	setupDone       setupResult = iota // saved, or nothing to change
+	setupUnsaved                       // shell: answers kept in memory, not saved
+	setupCancelled                     // Ctrl+C, or no at the save question (one-shot)
+	setupRefused                       // no schema, bad arguments, or no terminal
+	setupSaveFailed                    // the save itself failed
+)
+
+// setup asks about each key of the schema's sections, or of one section,
+// then shows the changes and asks whether to save them. save writes the
+// config and reports whether it worked; oneShot changes what declining
+// means: in the shell the answers stay unsaved in memory, otherwise they
+// are dropped.
+func (r *Repl) setup(args []string, read reader, confirm func(string) bool, save func() bool, oneShot bool) setupResult {
+	switch {
+	case r.schema == nil:
+		errorf("no schema (put %s next to the config, or use -s FILE)", schemaName)
+		return setupRefused
+	case len(args) > 1:
+		errorf("usage: setup [SECTION]")
+		return setupRefused
+	case !r.interactive:
+		errorf("setup needs a terminal; use set KEY=VALUE in scripts")
+		return setupRefused
 	}
-	return answer, err
+	var sections []string
+	if len(args) == 1 {
+		name := args[0]
+		if name == r.ini.delim {
+			name = ""
+		}
+		if len(r.schema.SetupKeys(r.ini, name)) == 0 {
+			errorf("nothing to set up in %s", args[0])
+			return setupRefused
+		}
+		sections = []string{name}
+	} else {
+		sections = r.schema.SetupSections(r.ini)
+		if su := r.schema.setup; su != nil {
+			if su.title != "" {
+				fmt.Println(su.title)
+			}
+			if su.doc != "" {
+				fmt.Println(su.doc)
+			}
+		}
+	}
+	fmt.Println("Enter keeps a value; Ctrl+C stops.")
+
+	before := r.ini.Clone()
+	stopped := false
+walk:
+	for _, sec := range sections {
+		fmt.Println()
+		fmt.Println(r.schema.SectionHeading(sec))
+		for _, key := range r.schema.SetupKeys(r.ini, sec) {
+			fmt.Println()
+			if r.ask(sec, key, read, askOpts{insist: true}) == askCancelled {
+				stopped = true
+				break walk
+			}
+		}
+	}
+
+	fmt.Println()
+	changes := diffIni(before, r.ini)
+	switch {
+	case stopped && oneShot:
+		fmt.Println("setup stopped; nothing saved")
+		return setupCancelled
+	case stopped:
+		if len(changes) > 0 {
+			fmt.Printf("setup stopped; %s unsaved (type changes to see them)\n", count(len(changes), "answer is", "answers are"))
+		} else {
+			fmt.Println("setup stopped")
+		}
+		return setupUnsaved
+	case len(changes) == 0:
+		fmt.Println("setup finished: no changes")
+		return setupDone
+	}
+	for _, c := range changes {
+		fmt.Println(c.line(r.ini.delim))
+	}
+	question := fmt.Sprintf("save %s to %s?", plural(len(changes), "change"), filepath.Base(r.path))
+	if total := r.unsaved(); total > len(changes) { // the shell had unsaved changes already
+		question = fmt.Sprintf("save %s to %s (%d made before setup)?",
+			plural(total, "change"), filepath.Base(r.path), total-len(changes))
+	}
+	if confirm(question) {
+		if save() {
+			return setupDone
+		}
+		return setupSaveFailed
+	}
+	if oneShot {
+		fmt.Println("not saved")
+		return setupCancelled
+	}
+	fmt.Println("not saved; the answers stay in memory (type save, or revert)")
+	return setupUnsaved
+}
+
+// oneShotSetup runs ezconfig setup [SECTION]: the questions with the line
+// editor, but no shell and no command history.
+func oneShotSetup(path, delim, schemaOpt string, args []string) int {
+	fail := func(code int, format string, a ...any) int {
+		fmt.Fprintf(os.Stderr, "ezconfig: "+format+"\n", a...)
+		return code
+	}
+	if !isTerminal(os.Stdin) {
+		return fail(exitArgs, "setup needs a terminal; use set KEY=VALUE in scripts")
+	}
+	_, statErr := os.Stat(path)
+	missing := os.IsNotExist(statErr)
+	ini, err := LoadIni(path, delim) // a missing file starts empty
+	if err != nil {
+		var se *SyntaxError
+		if errors.As(err, &se) {
+			return fail(exitSyntax, "%s: %v", path, err)
+		}
+		return fail(exitFile, "%s: %v", path, err)
+	}
+	schemaPath, err := findSchema(path, schemaOpt)
+	if err != nil {
+		return fail(exitFile, "%v", err)
+	}
+	if schemaPath == "" {
+		return fail(exitArgs, "no schema (put %s next to the config, or use -s FILE)", schemaName)
+	}
+	schema, err := LoadSchema(schemaPath)
+	if err != nil {
+		var se *SchemaError
+		if errors.As(err, &se) {
+			return fail(exitSyntax, "%s: %v", schemaPath, err)
+		}
+		return fail(exitFile, "%s: %v", schemaPath, err)
+	}
+
+	r := &Repl{ini: ini, saved: ini.Clone(), schema: schema, path: path, interactive: true}
+	r.ln = liner.NewLiner()
+	r.ln.SetTabCompletionStyle(liner.TabPrints)
+	defer r.ln.Close()
+
+	save := func() bool {
+		if err := r.ini.Save(path); err != nil {
+			fail(exitFile, "save %s: %v", path, err)
+			return false
+		}
+		if missing {
+			fmt.Printf("created %s\n", path)
+		} else {
+			fmt.Printf("saved %s\n", path)
+		}
+		return true
+	}
+	switch r.setup(args, r.readAnswer, r.confirmAnswer, save, true) {
+	case setupCancelled:
+		return exitCancelled
+	case setupRefused:
+		return exitArgs
+	case setupSaveFailed:
+		return exitFile
+	}
+	if p := schema.Problems(r.ini); len(p) > 0 {
+		for _, l := range p {
+			fmt.Fprintln(os.Stderr, "ezconfig:", l)
+		}
+		return exitInvalid
+	}
+	return exitOK
 }

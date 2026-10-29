@@ -34,7 +34,7 @@ list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 dump [SECTION]     print everything, or SECTION, as JSON
 check              report values that break the schema
 describe [NAME...] explain keys, or list a section's keys
-setup [SECTION]    ask for each value in turn, as the schema describes
+setup [SECTION]    ask for each value in turn, then offer to save
 status             show file details and session settings
 changes [SECTION]  show unsaved changes
 path               show the config's full path
@@ -160,6 +160,9 @@ func main() {
 		path := cl.path // messages name the full path, so it's clear which file
 		if abs, err := filepath.Abs(path); err == nil {
 			path = abs
+		}
+		if cl.cmd == "setup" {
+			os.Exit(oneShotSetup(path, cl.delim, cl.schema, cl.args))
 		}
 		os.Exit(oneShot(path, cl.delim, cl.schema, cl.cmd, cl.args, os.Stdout, os.Stderr))
 	}
@@ -464,7 +467,7 @@ func (r *Repl) exec(line string) bool {
 		}
 
 	case "setup":
-		r.setup(args, r.readAnswer)
+		r.setup(args, r.readAnswer, r.confirmAnswer, func() bool { return r.save("") }, false)
 
 	case "status":
 		r.status()
@@ -548,8 +551,9 @@ func (r *Repl) sectionLabel(name string) string {
 	return name
 }
 
-// save writes to target, or to the loaded file when target is "".
-func (r *Repl) save(target string) {
+// save writes to target, or to the loaded file when target is "", and
+// reports whether it did.
+func (r *Repl) save(target string) bool {
 	toLoaded := target == ""
 	if toLoaded {
 		target = r.path
@@ -558,18 +562,19 @@ func (r *Repl) save(target string) {
 	}
 	if toLoaded && r.changedOnDisk() &&
 		!r.confirm(filepath.Base(r.path)+" changed on disk since load; overwrite?") {
-		return
+		return false
 	}
 	if err := r.ini.Save(target); err != nil {
 		errorf("save: %v", err)
-		return
+		return false
 	}
 	if !toLoaded {
 		fmt.Printf("saved a copy to %s\n", target)
-		return
+		return true
 	}
 	fmt.Printf("saved %s to %s\n", plural(r.unsaved(), "change"), filepath.Base(r.path))
 	r.saved, r.disk = r.ini.Clone(), statFile(r.path)
+	return true
 }
 
 func (r *Repl) changedOnDisk() bool {

@@ -28,9 +28,15 @@ blocks starting with `@` describe the config:
     prompt=Which port should the player listen on?
     doc=Port the player listens on
 
-A `[@setup]` block (with `title`, `doc` and `sections=`) sets up the
-`setup` command in the shell, which walks through the sections asking for
-each value, as `set KEY` does; `setup SECTION` does one section.
+`setup` walks through the schema's sections asking for each value, as
+`set KEY` does, then shows the changes and asks whether to save them;
+`setup SECTION` does one section. A `[@setup]` block gives it a `title`,
+`doc` and `sections=` (which sections, in order). During setup, Enter
+can't leave a required key unset or an invalid value in place. It works in
+the shell and as `ezconfig setup` (which needs a terminal, so a program
+can run it on first launch: exit 0 when saved, 6 when stopped or not
+saved). While a question is asked, the up arrow recalls the key's current
+value and its default rather than the shell's history.
 
 Rules have a type (string, int, float, bool, enum) with min, max, values,
 pattern and required, plus `format` (how to write the value, in words, shown

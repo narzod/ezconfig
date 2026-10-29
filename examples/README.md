@@ -22,9 +22,10 @@ it automatically. Run these from inside the folder. On Windows, `echo
 Then open the shell with `ezconfig` and try:
 
 - `setup`: asks for each player, schedule and display value in the order
-  `[@setup] sections=` gives; Enter keeps a value, Ctrl+C stops, and
-  `changes` shows what was answered
-- `setup schedule`: just the one section
+  `[@setup] sections=` gives, then shows the changes and asks whether to
+  save; Enter keeps a value (but not a missing site), Ctrl+C stops
+- `setup schedule`, then the up arrow at a question: recalls the current
+  value and the default for editing
 - `set schedule.on` (no `=`): asks for the time, says what format it needs,
   and asks again after an answer like 7am; Enter alone keeps the value
 - `set display.rotation`, then Tab twice at the question: lists 0 90 180 270
@@ -46,6 +47,7 @@ has no `sections=`, so `setup` walks every section with rules, root first.
     ezconfig set backup.mode=weekly        refused: not one of mirror, incremental, full
     ezconfig unset backup.source           allowed, but then `ezconfig check` reports it as required
     ezconfig describe .                    the root keys
+    ezconfig setup                         asks for each value, then whether to save; exit 0, or 6 if stopped
 
 ## types
 
