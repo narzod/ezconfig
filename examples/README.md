@@ -11,13 +11,17 @@ it automatically. Run these from inside the folder. On Windows, `echo
     ezconfig describe display.rotation     type, allowed values, default and current value
     ezconfig check                         no output, exit 0: config.ini is valid
     ezconfig -c broken.ini check           eight problems, exit 1
+    ezconfig -c broken.ini list            only valid values: defaults replace the bad ones, warnings on stderr
+    ezconfig -c broken.ini -s none list    the same config exactly as written
     ezconfig set display.rotation=45       refused, exit 1
     ezconfig set player.debug=YES          accepted, saved as true
     ezconfig -s none list                  the config alone, without the schema
 
 Then open the shell with `ezconfig` and try:
 
-- `set display.rotation=` then Tab: offers 0, 90, 180, 270
+- `set display.rotation=` then Tab twice: lists 0 90 180 270
+- `set display.` then Tab twice: lists the keys you can set, including scale
+- `set player.` then Tab twice: includes site, which nothing has set yet
 - `set display.background=r` then Tab: completes to red
 - `get net.` then Tab: offers net.port even though config.ini never sets it
 - `unset display.rotation`: reports that the default (0) now applies

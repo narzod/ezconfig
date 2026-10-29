@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -284,9 +285,110 @@ func TestCompleteWithSchema(t *testing.T) {
 		{"describe display.ro", []string{"display.rotation "}},
 	}
 	for _, c := range cases {
-		_, got, _ := r.complete(c.line, len(c.line))
-		if !reflect.DeepEqual(got, c.want) {
+		head, cands, _ := r.complete(c.line, len(c.line))
+		if got := completedWords(c.line, head, cands); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%q: got %q, want %q", c.line, got, c.want)
 		}
+	}
+
+	// What liner lists is only what remains to choose.
+	for line, want := range map[string][]string{
+		"set display.rotation=":   {"0", "90", "180", "270"},
+		"set display.":            {"background=", "rotation=", "scale=", "width="}, // scale: a rule, no default
+		"set player.":             {"autostart=", "debug=", "name=", "site="},       // site: required, no default
+		"set display.background=": {"black", "white", "red", "green", "blue", "yellow"},
+	} {
+		if _, cands, _ := r.complete(line, len(line)); !reflect.DeepEqual(cands, want) {
+			t.Errorf("%q lists %q, want %q", line, cands, want)
+		}
+	}
+}
+
+func TestValidOnly(t *testing.T) {
+	s := loadTestSchema(t)
+	cfg := NewIni()
+	cfg.parse(strings.NewReader("[player]\nname=Lobby East\nsite=0142\ndebug=maybe\n[display]\nscale=3\n[net]\nport=70000\n"))
+
+	eff, notes := s.EffectiveNotes(cfg)
+	for path, want := range map[string]string{
+		"player.name":  "player", // invalid: the default
+		"player.debug": "false",  // invalid: the default, in its standard spelling
+		"net.port":     "8080",   // invalid: the default
+		"player.site":  "0142",   // valid: kept
+	} {
+		if got, _ := eff.Get(path); got != want {
+			t.Errorf("%s: got %q, want %q", path, got, want)
+		}
+	}
+	if _, ok := eff.Get("display.scale"); ok {
+		t.Error("display.scale: invalid with no default, should be left out")
+	}
+	var texts []string
+	for _, n := range notes {
+		texts = append(texts, n.text)
+	}
+	want := []string{
+		`player.name: "Lobby East" doesn't match the pattern [a-z0-9-]+; using the default (player)`,
+		"player.debug: maybe is not a yes/no value (true/false, yes/no, 1/0); using the default (false)",
+		"display.scale: 3 is above the maximum (2); left out (no default)",
+		"net.port: 70000 is above the maximum (65535); using the default (8080)",
+	}
+	if !reflect.DeepEqual(texts, want) {
+		t.Errorf("notes:\n got %q\nwant %q", texts, want)
+	}
+
+	// describe says what applications get, and why.
+	lines, _ := s.Describe(cfg, "net.port")
+	if got := lines[3]; got != "value: 8080 (the default, because the config's value is invalid: 70000 is above the maximum (65535))" {
+		t.Errorf("describe net.port: %q", got)
+	}
+	lines, _ = s.Describe(cfg, "display.scale")
+	if got := lines[3]; !strings.HasPrefix(got, "value: none (the config's value is invalid") {
+		t.Errorf("describe display.scale: %q", got)
+	}
+
+	// An invalid value isn't also reported as missing when required.
+	s.ruleFor("player", "site").required = true
+	cfg.Set("player.site", "")
+	for _, p := range s.Problems(cfg) {
+		if strings.HasPrefix(p, "player.name: required") {
+			t.Errorf("duplicate problem: %q", p)
+		}
+	}
+}
+
+func TestOneShotValidOnly(t *testing.T) {
+	dir := t.TempDir()
+	cfg := writeFile(t, dir, "config.ini", "[player]\nname=lobby-east\nsite=0142\n[display]\nscale=3\n[net]\nport=70000\n")
+	writeFile(t, dir, "schema.ini", testSchema)
+
+	code, out, errOut := run(t, cfg, ".", "get", "net.port")
+	if code != 0 || out != "8080\n" || !strings.Contains(errOut, "using the default (8080)") {
+		t.Errorf("get invalid with default: %d %q %q", code, out, errOut)
+	}
+	code, out, errOut = run(t, cfg, ".", "get", "net.port", "display.scale")
+	if code != 1 || out != "" || !strings.Contains(errOut, "left out (no default)") {
+		t.Errorf("get invalid without default: %d %q %q", code, out, errOut)
+	}
+	code, out, errOut = run(t, cfg, ".", "get", "display.scale", "nope.key")
+	if code != 5 || out != "" {
+		t.Errorf("get invalid and missing: %d %q %q", code, out, errOut)
+	}
+	code, out, errOut = run(t, cfg, ".", "list", "net")
+	if code != 0 || out != "net.port=8080\n" || !strings.Contains(errOut, "net.port: 70000") {
+		t.Errorf("list net: %d %q %q", code, out, errOut)
+	}
+	code, out, errOut = run(t, cfg, ".", "list", "player")
+	if code != 0 || errOut != "" {
+		t.Errorf("list player warns about other sections: %d %q", code, errOut)
+	}
+	code, out, _ = run(t, cfg, ".", "dump", "display")
+	if code != 0 || strings.Contains(out, "scale") {
+		t.Errorf("dump display includes the invalid scale: %d %q", code, out)
+	}
+	// -s none shows exactly what the config says, valid or not.
+	var buf, errBuf bytes.Buffer
+	if code := oneShot(cfg, ".", "none", "list", []string{"net"}, &buf, &errBuf); code != 0 || buf.String() != "net.port=70000\n" {
+		t.Errorf("-s none: %d %q", code, buf.String())
 	}
 }

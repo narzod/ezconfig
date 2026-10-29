@@ -75,8 +75,8 @@ func TestComplete(t *testing.T) {
 		{"sections ", nil},
 	}
 	for _, c := range cases {
-		head, got, _ := r.complete(c.line, len(c.line))
-		if !reflect.DeepEqual(got, c.want) {
+		head, cands, _ := r.complete(c.line, len(c.line))
+		if got := completedWords(c.line, head, cands); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%q: got %q, want %q", c.line, got, c.want)
 		}
 		if !strings.HasPrefix(c.line, head) {
@@ -186,8 +186,9 @@ func TestDelimiter(t *testing.T) {
 	if got, _ := ini.List("net"); !reflect.DeepEqual(got, []string{"net/port=80"}) {
 		t.Errorf("list net: got %q", got)
 	}
-	_, cands, _ := r.complete("get boot.description/k", len("get boot.description/k"))
-	if !reflect.DeepEqual(cands, []string{"boot.description/keyboard.typ "}) {
+	line := "get boot.description/k"
+	head, cands, _ := r.complete(line, len(line))
+	if got := completedWords(line, head, cands); !reflect.DeepEqual(got, []string{"boot.description/keyboard.typ "}) {
 		t.Errorf("complete with /: got %q", cands)
 	}
 	_, cands, _ = r.complete("list ", len("list "))
@@ -252,7 +253,18 @@ func TestMidLineCompletion(t *testing.T) {
 	r := newTestRepl(t)
 	line := "get net.h display.width"
 	head, got, tail := r.complete(line, len("get net.h"))
-	if head != "get " || tail != " display.width" || !reflect.DeepEqual(got, []string{"net.host "}) {
+	if head != "get net." || tail != " display.width" || !reflect.DeepEqual(got, []string{"host "}) {
 		t.Errorf("got head=%q cands=%q tail=%q", head, got, tail)
 	}
+}
+
+// completedWords shows each candidate as the whole word it completes to:
+// the settled part moved into head, plus the candidate.
+func completedWords(line, head string, cands []string) []string {
+	settled := head[strings.LastIndex(line[:len(head)], " ")+1:]
+	var out []string
+	for _, c := range cands {
+		out = append(out, settled+c)
+	}
+	return out
 }

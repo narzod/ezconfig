@@ -275,11 +275,15 @@ func (r *Repl) exec(line string) bool {
 			errorf("usage: get KEY...")
 			break
 		}
-		view := r.view()
+		view, notes := r.schema.EffectiveNotes(r.ini)
 		for _, p := range args {
+			sec, key := r.ini.splitPath(p)
+			for _, n := range notesFor(notes, [][2]string{{sec, key}}) {
+				errorf("%s", n)
+			}
 			if v, ok := view.Get(p); ok {
 				fmt.Println(v)
-			} else {
+			} else if _, inConfig := r.ini.Get(p); !inConfig {
 				errorf("not found: %s", p)
 			}
 		}
@@ -382,6 +386,7 @@ func (r *Repl) exec(line string) bool {
 			errorf("no such section: %s", args[0])
 			break
 		}
+		r.warnScope(firstOr(args, ""))
 		printLines(keys)
 
 	case "sections":
@@ -397,6 +402,7 @@ func (r *Repl) exec(line string) bool {
 			errorf("no such section: %s", args[0])
 			break
 		}
+		r.warnScope(firstOr(args, ""))
 		printLines(lines)
 
 	case "dump":
@@ -413,6 +419,7 @@ func (r *Repl) exec(line string) bool {
 			errorf("dump: %v", err)
 			break
 		}
+		r.warnScope(firstOr(args, ""))
 		fmt.Print(out)
 
 	case "check":
@@ -682,4 +689,22 @@ func fileExists(path string) bool {
 // config with the schema's defaults and standard spellings applied.
 func (r *Repl) view() *Ini {
 	return r.schema.Effective(r.ini)
+}
+
+// warnScope reports invalid values that reading commands replaced by a
+// default or left out, within a SECTION argument ("" for all).
+func (r *Repl) warnScope(arg string) {
+	_, notes := r.schema.EffectiveNotes(r.ini)
+	var texts []string
+	switch arg {
+	case "":
+		texts = notesIn(notes, "", true)
+	case r.ini.delim:
+		texts = notesIn(notes, "", false)
+	default:
+		texts = notesIn(notes, arg, false)
+	}
+	for _, t := range texts {
+		errorf("%s", t)
+	}
 }

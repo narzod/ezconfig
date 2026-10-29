@@ -129,7 +129,25 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 			return fail(exitFile, "%s: %v", schemaPath, err)
 		}
 	}
-	view := schema.Effective(ini) // what applications see
+	// What applications see: defaults filled in, only valid values. Each
+	// invalid value replaced or left out has a note, shown on stderr.
+	view, notes := schema.EffectiveNotes(ini)
+	warn := func(texts []string) {
+		for _, t := range texts {
+			fmt.Fprintf(stderr, "ezconfig: %s\n", t)
+		}
+	}
+	// warnScope warns about notes within a SECTION argument ("" for all).
+	warnScope := func(arg string) {
+		switch arg {
+		case "":
+			warn(notesIn(notes, "", true))
+		case delim:
+			warn(notesIn(notes, "", false))
+		default:
+			warn(notesIn(notes, arg, false))
+		}
+	}
 	needSchema := func() int {
 		return fail(exitArgs, "no schema (put %s next to the config, or use -s FILE)", schemaName)
 	}
@@ -151,16 +169,25 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 			return fail(exitArgs, "usage: get KEY...")
 		}
 		values := make([]string, 0, len(args))
-		var missingKeys []string
+		var missingKeys, invalidKeys []string
+		var asked [][2]string
 		for _, p := range args {
+			sec, key := ini.splitPath(p)
+			asked = append(asked, [2]string{sec, key})
 			if v, ok := view.Get(p); ok {
 				values = append(values, v)
+			} else if _, inConfig := ini.Get(p); inConfig {
+				invalidKeys = append(invalidKeys, p) // invalid, and no default
 			} else {
 				missingKeys = append(missingKeys, p)
 			}
 		}
-		if len(missingKeys) > 0 { // all or nothing, so lines never shift
+		warn(notesFor(notes, asked))
+		switch { // all or nothing, so lines never shift
+		case len(missingKeys) > 0:
 			return notFound(missingKeys)
+		case len(invalidKeys) > 0:
+			return exitInvalid
 		}
 		for _, v := range values {
 			fmt.Fprintln(stdout, v)
@@ -181,6 +208,7 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		if !ok {
 			return notFound(args)
 		}
+		warnScope(firstOr(args, ""))
 		for _, l := range lines {
 			fmt.Fprintln(stdout, l)
 		}
@@ -251,6 +279,7 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		if err != nil {
 			return fail(exitSyntax, "dump: %v", err)
 		}
+		warnScope(firstOr(args, ""))
 		fmt.Fprint(stdout, out)
 		return exitOK
 

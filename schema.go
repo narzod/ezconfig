@@ -344,42 +344,74 @@ func (s *Schema) defaultFor(sec, key string) (string, bool) {
 }
 
 // Effective is what applications see: the config with the schema's
-// defaults filled in for keys it doesn't set, and bools and enums in their
-// standard spelling. The config's own order comes first; keys and
-// sections that only the defaults have follow. Without a schema it is the
-// config itself.
+// defaults filled in, bools and enums in their standard spelling, and
+// only valid values. A value that breaks its rule is replaced by the
+// default, or left out when there is no default; each such substitution
+// is described in the returned notes. The config's own order comes first;
+// keys and sections that only the defaults have follow. Without a schema
+// it is the config itself.
 func (s *Schema) Effective(cfg *Ini) *Ini {
+	eff, _ := s.EffectiveNotes(cfg)
+	return eff
+}
+
+// note explains why the effective value of a key differs from the config.
+type note struct {
+	sec, key string
+	text     string
+}
+
+// EffectiveNotes is Effective, plus a note for each invalid value that was
+// replaced by its default or left out.
+func (s *Schema) EffectiveNotes(cfg *Ini) (*Ini, []note) {
 	if s == nil {
-		return cfg
+		return cfg, nil
 	}
 	out := cfg.Clone()
-	for _, e := range s.defaults.root.entries {
-		if out.root.find(e.key) < 0 {
-			out.root.entries = append(out.root.entries, e)
+	var notes []note
+	fix := func(name string, sec *section) {
+		kept := sec.entries[:0]
+		for _, e := range sec.entries {
+			r := s.ruleFor(name, e.key)
+			if r == nil {
+				kept = append(kept, e)
+				continue
+			}
+			v, err := r.check(e.value)
+			if err == nil {
+				kept = append(kept, entry{e.key, v})
+				continue
+			}
+			addr := address(name, e.key, cfg.delim)
+			if def, ok := s.defaultFor(name, e.key); ok {
+				def, _ = r.check(def) // defaults are checked when the schema loads
+				kept = append(kept, entry{e.key, def})
+				notes = append(notes, note{name, e.key, fmt.Sprintf("%s: %v; using the default (%s)", addr, err, def)})
+			} else {
+				notes = append(notes, note{name, e.key, fmt.Sprintf("%s: %v; left out (no default)", addr, err)})
+			}
 		}
+		sec.entries = kept
 	}
-	for _, ds := range s.defaults.sections {
-		dst := out.ensureSection(ds.name)
-		for _, e := range ds.entries {
+	fix("", &out.root)
+	for _, sec := range out.sections {
+		fix(sec.name, sec)
+	}
+	add := func(dst *section, name string, entries []entry) {
+		for _, e := range entries {
 			if dst.find(e.key) < 0 {
+				if r := s.ruleFor(name, e.key); r != nil {
+					e.value, _ = r.check(e.value)
+				}
 				dst.entries = append(dst.entries, e)
 			}
 		}
 	}
-	standardize := func(name string, sec *section) {
-		for i, e := range sec.entries {
-			if r := s.ruleFor(name, e.key); r != nil {
-				if v, err := r.check(e.value); err == nil {
-					sec.entries[i].value = v
-				}
-			}
-		}
+	add(&out.root, "", s.defaults.root.entries)
+	for _, ds := range s.defaults.sections {
+		add(out.ensureSection(ds.name), ds.name, ds.entries)
 	}
-	standardize("", &out.root)
-	for _, sec := range out.sections {
-		standardize(sec.name, sec)
-	}
-	return out
+	return out, notes
 }
 
 // Problems lists values in cfg that break the schema, and required keys
@@ -389,11 +421,13 @@ func (s *Schema) Problems(cfg *Ini) []string {
 		return nil
 	}
 	var out []string
+	invalid := map[[2]string]bool{}
 	walk := func(name string, sec *section) {
 		for _, e := range sec.entries {
 			if r := s.ruleFor(name, e.key); r != nil {
 				if _, err := r.check(e.value); err != nil {
 					out = append(out, address(name, e.key, cfg.delim)+": "+err.Error())
+					invalid[[2]string{name, e.key}] = true
 				}
 			}
 		}
@@ -404,6 +438,9 @@ func (s *Schema) Problems(cfg *Ini) []string {
 	}
 	eff := s.Effective(cfg)
 	for _, r := range s.rules {
+		if invalid[[2]string{r.sec, r.key}] {
+			continue // already reported as invalid
+		}
 		if v, ok := valueAt(eff, r.sec, r.key); r.required && (!ok || v == "") {
 			out = append(out, address(r.sec, r.key, cfg.delim)+": required, but not set")
 		}
@@ -436,15 +473,18 @@ func (s *Schema) Describe(cfg *Ini, path string) (lines []string, ok bool) {
 	} else {
 		lines = append(lines, "default: none")
 	}
-	switch v, _ := valueAt(s.Effective(cfg), sec, key); {
-	case inConfig && r != nil:
-		if _, err := r.check(raw); err != nil {
-			lines = append(lines, fmt.Sprintf("value: %s (set in the config, but %v)", raw, err))
-		} else {
-			lines = append(lines, "value: "+v+" (set in the config)")
-		}
+	v, inEffective := valueAt(s.Effective(cfg), sec, key)
+	var err error
+	if inConfig && r != nil {
+		_, err = r.check(raw)
+	}
+	switch {
+	case err != nil && inEffective:
+		lines = append(lines, fmt.Sprintf("value: %s (the default, because the config's value is invalid: %v)", v, err))
+	case err != nil:
+		lines = append(lines, fmt.Sprintf("value: none (the config's value is invalid: %v; there is no default)", err))
 	case inConfig:
-		lines = append(lines, "value: "+raw+" (set in the config)")
+		lines = append(lines, "value: "+v+" (set in the config)")
 	case hasDef:
 		lines = append(lines, "value: "+v+" (the default)")
 	default:
@@ -454,6 +494,32 @@ func (s *Schema) Describe(cfg *Ini, path string) (lines []string, ok bool) {
 		lines = append(lines, "doc: "+r.doc)
 	}
 	return lines, true
+}
+
+// notesFor picks the notes about the given keys (sec, key pairs).
+func notesFor(notes []note, keys [][2]string) []string {
+	var out []string
+	for _, n := range notes {
+		for _, k := range keys {
+			if n.sec == k[0] && n.key == k[1] {
+				out = append(out, n.text)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// notesIn picks the notes about one section ("" with all set means every
+// note; sec "" with all false means the root keys).
+func notesIn(notes []note, sec string, all bool) []string {
+	var out []string
+	for _, n := range notes {
+		if all || n.sec == sec {
+			out = append(out, n.text)
+		}
+	}
+	return out
 }
 
 // Rules counts the schema's rules.

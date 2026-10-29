@@ -7,6 +7,11 @@ package main
 // candidate between head and tail. Because liner inserts candidates
 // verbatim, each candidate carries its own trailing text: a space after
 // a finished word, "." after a section name, "=" after a key for `set`.
+//
+// Whatever part of the word is already settled - a section name and its
+// delimiter, or a key and its "=" - is moved into head, so the candidates
+// liner lists are only what remains to choose: "width  height" rather than
+// "display.width=  display.height=".
 
 import "strings"
 
@@ -27,11 +32,20 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 	}
 
 	switch args[0] {
-	case "get", "describe":
-		cands = keyPaths(r.view(), word, " ") // the schema's keys too
+	case "get":
+		var settled string
+		settled, cands = keyPaths(r.view(), word, " ") // keys with a value, defaults included
+		head += settled
+
+	case "describe":
+		var settled string
+		settled, cands = keyPaths(r.knownKeys(), word, " ") // every key the schema defines
+		head += settled
 
 	case "unset":
-		cands = keyPaths(r.ini, word, " ") // only what the config sets
+		var settled string
+		settled, cands = keyPaths(r.ini, word, " ") // only what the config sets
+		head += settled
 
 	case "wipe":
 		cands = sectionNames(r.ini, word, " ")
@@ -64,17 +78,20 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 		if path, typed, ok := strings.Cut(word, "="); ok {
 			// After "=": the allowed values, if the schema lists them,
 			// otherwise the current value so it can be edited.
+			head += path + "="
 			if rl := r.schema.ruleFor(r.ini.splitPath(path)); rl != nil && rl.choices() != nil {
 				for _, c := range rl.choices() {
 					if strings.HasPrefix(strings.ToLower(c), strings.ToLower(typed)) {
-						cands = append(cands, path+"="+c)
+						cands = append(cands, c)
 					}
 				}
 			} else if v, found := r.view().Get(path); found {
-				cands = []string{path + "=" + v}
+				cands = []string{v}
 			}
 		} else {
-			cands = keyPaths(r.view(), word, "=")
+			var settled string
+			settled, cands = keyPaths(r.knownKeys(), word, "=")
+			head += settled
 		}
 
 	case "keys", "list", "dump":
@@ -101,24 +118,21 @@ func sectionNames(ini *Ini, word, suffix string) []string {
 }
 
 // keyPaths completes a key address. Without a delimiter it offers root
-// keys (with suffix) and section names (with the delimiter); after "sec."
-// it offers that section's keys.
-func keyPaths(ini *Ini, word, suffix string) []string {
+// keys (with suffix) and section names (with the delimiter). After "sec."
+// that part is settled: it is returned separately, and the candidates are
+// just that section's key names.
+func keyPaths(ini *Ini, word, suffix string) (settled string, cands []string) {
 	sep := ini.delim
 	if sec, partial, ok := strings.Cut(word, sep); ok {
 		if sec == "" {
-			return nil
+			return "", nil
 		}
 		keys, _ := ini.Keys(sec)
-		var out []string
-		for _, k := range withPrefix(keys, partial, suffix) {
-			out = append(out, sec+sep+k)
-		}
-		return out
+		return sec + sep, withPrefix(keys, partial, suffix)
 	}
 	roots, _ := ini.Keys("")
-	out := withPrefix(roots, word, suffix)
-	return append(out, withPrefix(ini.Sections(), word, sep)...)
+	cands = withPrefix(roots, word, suffix)
+	return "", append(cands, withPrefix(ini.Sections(), word, sep)...)
 }
 
 // withPrefix filters items by prefix, sorts them, and appends suffix.
@@ -130,4 +144,25 @@ func withPrefix(items []string, prefix, suffix string) []string {
 		}
 	}
 	return out
+}
+
+// knownKeys is the effective config plus every key the schema has a rule
+// for, even with no value or default yet, so set and describe can offer
+// keys like a required site code that nothing has set.
+func (r *Repl) knownKeys() *Ini {
+	known := r.view()
+	if r.schema == nil {
+		return known
+	}
+	known = known.Clone()
+	for _, rl := range r.schema.rules {
+		dst := &known.root
+		if rl.sec != "" {
+			dst = known.ensureSection(rl.sec)
+		}
+		if dst.find(rl.key) < 0 {
+			dst.entries = append(dst.entries, entry{key: rl.key})
+		}
+	}
+	return known
 }
