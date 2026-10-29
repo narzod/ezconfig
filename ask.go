@@ -251,8 +251,8 @@ const (
 )
 
 // askAll asks about each key of the schema's sections, or of one
-// section, then shows the changes and asks whether to save, edit an
-// answer, or quit. That question has no default: Enter alone asks again,
+// section, then shows the changes and asks whether to save, redo the
+// questions (starting from these answers), or quit. That question has no default: Enter alone asks again,
 // so pressing Enter once too often can't lose or save anything. save
 // writes the config and reports whether it worked. In the shell, quitting
 // leaves the answers unsaved in memory; one-shot, it drops them.
@@ -293,46 +293,36 @@ func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool
 	fmt.Println("Enter keeps a value; Ctrl+C stops.")
 
 	before := r.ini.Clone()
-	var asked [][2]string // section, key: what edit can return to
-	stopped := false
-walk:
-	for _, sec := range sections {
-		fmt.Println()
-		fmt.Println(r.schema.SectionHeading(sec))
-		for _, key := range r.schema.AskKeys(r.ini, sec) {
-			fmt.Println()
-			asked = append(asked, [2]string{sec, key})
-			if r.ask(sec, key, read, askOpts{insist: true}) == askCancelled {
-				stopped = true
-				break walk
-			}
-		}
-	}
-
 	quitWord := "quit without saving"
 	if !oneShot {
 		quitWord = "quit and keep the answers unsaved"
 	}
+	question := "save, redo, or " + quitWord + "? [s/r/q] "
 	for {
+		if !r.askWalk(sections, read) {
+			fmt.Println()
+			return r.askLeave(diffIni(before, r.ini), oneShot, "stopped")
+		}
+
+		// The review: set apart from the questions above it.
 		fmt.Println()
+		fmt.Println(strings.Repeat("-", 40))
 		changes := diffIni(before, r.ini)
-		switch {
-		case stopped:
-			return r.askLeave(changes, oneShot, "stopped")
-		case len(changes) == 0:
-			fmt.Println("done: no changes")
+		if len(changes) == 0 {
+			fmt.Println("no changes")
 			return askDone
 		}
+		fmt.Printf("changes to %s:\n", filepath.Base(r.path))
 		for _, c := range changes {
 			fmt.Println(c.line(r.ini.delim))
 		}
 		if total := r.unsaved(); total > len(changes) { // the shell had unsaved changes already
 			fmt.Printf("(saving also writes %s made earlier)\n", plural(total-len(changes), "change"))
 		}
-		fmt.Printf("s: save to %s, e: edit an answer, q: %s\n", filepath.Base(r.path), quitWord)
+		fmt.Println()
 		choice := ""
 		for choice == "" {
-			a, err := read("save, edit, or quit? [s/e/q] ", []string{"save", "edit", "quit"}, nil)
+			a, err := read(question, []string{"save", "redo", "quit"}, nil)
 			if err != nil { // Ctrl+C here is a deliberate stop
 				fmt.Println()
 				return r.askLeave(changes, oneShot, "stopped")
@@ -340,12 +330,12 @@ walk:
 			switch strings.ToLower(strings.TrimSpace(a)) {
 			case "s", "save":
 				choice = "save"
-			case "e", "edit":
-				choice = "edit"
+			case "r", "redo":
+				choice = "redo"
 			case "q", "quit":
 				choice = "quit"
 			default:
-				fmt.Println("type s to save, e to edit an answer, or q to quit")
+				fmt.Println("type s to save, r to go through the questions again, or q to quit")
 			}
 		}
 		switch choice {
@@ -357,32 +347,24 @@ walk:
 		case "quit":
 			return r.askLeave(changes, oneShot, "quit")
 		}
-		r.editAnswer(asked, read)
+		// redo: the same questions again, starting from these answers.
 	}
 }
 
-// editAnswer asks which of the asked keys to change, then asks it again.
-// Enter alone, or Ctrl+C, goes back to the review.
-func (r *Repl) editAnswer(asked [][2]string, read reader) {
-	var addrs []string
-	for _, k := range asked {
-		addrs = append(addrs, address(k[0], k[1], r.ini.delim))
-	}
-	for {
-		a, err := read("edit which key? ", addrs, nil)
-		a = strings.TrimSpace(a)
-		if err != nil || a == "" {
-			return
-		}
-		for i, addr := range addrs {
-			if addr == a {
-				fmt.Println()
-				r.ask(asked[i][0], asked[i][1], read, askOpts{insist: true})
-				return
+// askWalk asks every key of the given sections in turn. It returns false
+// when the person stops with Ctrl+C.
+func (r *Repl) askWalk(sections []string, read reader) bool {
+	for _, sec := range sections {
+		fmt.Println()
+		fmt.Println(r.schema.SectionHeading(sec))
+		for _, key := range r.schema.AskKeys(r.ini, sec) {
+			fmt.Println()
+			if r.ask(sec, key, read, askOpts{insist: true}) == askCancelled {
+				return false
 			}
 		}
-		errorf("%s wasn't asked here; Tab lists the keys (Enter goes back)", a)
 	}
+	return true
 }
 
 // askLeave ends an ask run without saving: one-shot drops the answers,

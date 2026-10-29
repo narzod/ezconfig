@@ -164,7 +164,7 @@ sections=app,.
 		t.Errorf("AskKeys: %q", got)
 	}
 
-	const review = "save, edit, or quit? [s/e/q] "
+	const review = "REVIEW" // promptKey's name for the review question, in either mode
 	var asked []string
 	var recalled [][]string
 	answers := map[string][]string{
@@ -245,28 +245,44 @@ sections=app,.
 		}
 	}
 
-	// Edit: change one answer from the review, then save.
+	// Redo: the questions again, starting from the answers given.
 	ini.Set("app.mode", "desktop")
 	before := saves
-	got := r.askAll([]string{"app"}, script(
-		[2]string{"app.mode> ", "kiosk"},
-		[2]string{review, "e"},
-		[2]string{"edit which key? ", "app.mode"},
-		[2]string{"app.mode> ", "desktop"}, // back to where it was: no changes left
-	), save, false)
+	var prompts []string
+	steps := [][2]string{
+		{"app.mode> ", "kiosk"},
+		{review, "r"},
+		{"app.mode> ", "desktop"}, // back to where it was: no changes left
+	}
+	got := r.askAll([]string{"app"}, func(p string, _, _ []string) (string, error) {
+		prompts = append(prompts, p)
+		p = promptKey(p)
+		for i, st := range steps {
+			if st[0] == p {
+				steps = append(steps[:i:i], steps[i+1:]...)
+				return st[1], nil
+			}
+		}
+		return "", nil
+	}, save, false)
 	if got != askDone || saves != before {
-		t.Errorf("edit back to the old value: result %d, saves %d", got, saves-before)
+		t.Errorf("redo back to the old value: result %d, saves %d", got, saves-before)
+	}
+	// The second pass shows the first pass's answer in the brackets.
+	if !contains(prompts, "app.mode [kiosk]> ") {
+		t.Errorf("redo prompts: %q", prompts)
 	}
 	got = r.askAll([]string{"app"}, script(
 		[2]string{"app.mode> ", "kiosk"},
-		[2]string{review, "edit"},
-		[2]string{"edit which key? ", "nope"},
-		[2]string{"edit which key? ", "app.retries"},
-		[2]string{"app.retries> ", "7"},
+		[2]string{review, "redo"},
+		[2]string{"app.retries> ", "7"}, // kiosk is kept with Enter
 		[2]string{review, "save"},
 	), save, false)
 	if v, _ := ini.Get("app.retries"); got != askDone || v != "7" || saves != before+1 {
-		t.Errorf("edit then save: result %d, retries %q", got, v)
+		t.Errorf("redo then save: result %d, retries %q", got, v)
+	}
+	if v, _ := ini.Get("app.mode"); v != "kiosk" {
+		t.Errorf("redo lost the first answer: mode %q", v)
 	}
 
 	// Quit: dropped in one-shot, kept unsaved in memory in the shell.
@@ -362,6 +378,9 @@ func contains(list []string, s string) bool {
 
 // promptKey drops the current value from a prompt: "a.b [x]> " is "a.b> ".
 func promptKey(p string) string {
+	if strings.HasPrefix(p, "save, redo, or ") {
+		return "REVIEW"
+	}
 	if i := strings.Index(p, " ["); i >= 0 && strings.HasSuffix(p, "]> ") {
 		return p[:i] + "> "
 	}

@@ -59,7 +59,7 @@ list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 emit [SECTION]     print everything, or SECTION, as JSON for programs
 check              report values that break the schema
 explain [NAME...]  explain keys and sections, or everything
-ask [SECTION]      ask for each value, then save, edit or quit (needs a terminal)
+ask [SECTION]      ask for each value, then save, redo or quit (needs a terminal)
 help               show this text
 version            show the program version
 

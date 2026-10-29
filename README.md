@@ -30,8 +30,8 @@ blocks starting with `@` describe the config:
     doc=Port the player listens on
 
 `ask` walks through the schema's sections asking for each value, as
-`set KEY` does, then shows the changes and asks: save, edit an answer, or
-quit. That question has no default, so pressing Enter once too often
+`set KEY` does, then shows the changes and asks: save, redo the questions
+(starting from the answers given), or quit. That question has no default, so pressing Enter once too often
 can't lose anything. `ask SECTION` does one section. An `[@ask]` block gives it a `title`, `doc`
 and `sections=` (which sections, in order). During `ask`, Enter can't leave
 a required key unset or an invalid value in place. It works in the shell

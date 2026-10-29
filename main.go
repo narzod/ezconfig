@@ -34,7 +34,7 @@ list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 emit [SECTION]     print everything, or SECTION, as JSON for programs
 check              report values that break the schema
 explain [NAME...]  explain keys and sections, or everything
-ask [SECTION]      ask for each value in turn, then save, edit or quit
+ask [SECTION]      ask for each value in turn, then save, redo or quit
 status             show file details and session settings
 changes [SECTION]  show unsaved changes
 path               show the config's full path
