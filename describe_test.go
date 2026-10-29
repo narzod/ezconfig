@@ -423,3 +423,26 @@ func TestQuestionLayout(t *testing.T) {
 		t.Errorf("recall for an invalid value: %q", got)
 	}
 }
+
+func TestSchemaIdentity(t *testing.T) {
+	cases := map[string]string{
+		"[@ask]\napplication=SignLoop 2.4\nversion=3\n": "version 3, for SignLoop 2.4",
+		"[@ask]\nversion=3\n":                           "version 3",
+		"[@ask]\napplication=SignLoop\n":                "for SignLoop",
+		"[@ask]\ntitle=x\n":                             "",
+		"a=1\n":                                         "", // no [@ask] at all
+	}
+	for src, want := range cases {
+		s, err := LoadSchema(writeFile(t, t.TempDir(), "schema.ini", src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := s.Identity(); got != want {
+			t.Errorf("%q: got %q, want %q", src, got, want)
+		}
+	}
+	var none *Schema
+	if none.Identity() != "" {
+		t.Error("nil schema")
+	}
+}

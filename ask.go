@@ -285,6 +285,12 @@ func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool
 			if su.title != "" {
 				fmt.Println(su.title)
 			}
+			if id := r.schema.Identity(); id != "" {
+				if su.version != "" {
+					id = "schema " + id
+				}
+				fmt.Println(id)
+			}
 			if su.doc != "" {
 				fmt.Println(su.doc)
 			}

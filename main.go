@@ -208,7 +208,7 @@ func main() {
 		fmt.Printf("new file: %s (created on save)\n", path)
 	}
 	if schema != nil {
-		fmt.Printf("schema: %s (%s)\n", schemaLabel(schemaPath, path), plural(schema.Rules(), "rule"))
+		fmt.Printf("schema: %s (%s)\n", schemaLabel(schemaPath, path), schemaSummary(schema))
 		if p := schema.Problems(ini); len(p) > 0 {
 			fmt.Printf("note: %s; type check for details\n", count(len(p), "value breaks the schema", "values break the schema"))
 		}
@@ -587,7 +587,7 @@ func (r *Repl) status() {
 	// The two files.
 	fmt.Println("config:", r.path)
 	if r.schema != nil {
-		fmt.Printf("schema: %s (%s)\n", r.schema.path, plural(r.schema.Rules(), "rule"))
+		fmt.Printf("schema: %s (%s)\n", r.schema.path, schemaSummary(r.schema))
 	} else {
 		fmt.Println("schema: none")
 	}
@@ -632,6 +632,16 @@ func (r *Repl) status() {
 		fmt.Println("delimiter:", r.ini.delim, "(remembered for this config)")
 		fmt.Printf("history: on (%s)\n", r.histLabel())
 	}
+}
+
+// schemaSummary is what follows a schema's path: its rule count, and its
+// version and application when [@ask] gives them.
+func schemaSummary(s *Schema) string {
+	text := plural(s.Rules(), "rule")
+	if id := s.Identity(); id != "" {
+		text += "; " + id
+	}
+	return text
 }
 
 // writable reports whether path could be saved: an existing file must open

@@ -33,7 +33,9 @@ blocks starting with `@` describe the config:
 `set KEY` does, then shows the changes and asks: save, redo the questions
 (starting from the answers given), or quit. That question has no default, so pressing Enter once too often
 can't lose anything. `ask SECTION` does one section. An `[@ask]` block gives it a `title`, `doc`
-and `sections=` (which sections, in order). During `ask`, Enter can't leave
+and `sections=` (which sections, in order), and can say what the schema
+is: `application=` (what it ships with) and `version=` (its own version),
+shown when `ask` starts and in `status`. During `ask`, Enter can't leave
 a required key unset or an invalid value in place. It works in the shell
 and as `ezconfig ask` (which needs a terminal, so a program can run it on
 first launch: exit 0 when saved, 6 when stopped or quit without saving; in the
@@ -59,6 +61,13 @@ bare name is a root key, and also the section of that name if there is
 one; `NAME.` (with the delimiter) is only the section. In
 the shell, `set KEY` without `=` explains the key and asks for its value
 (Enter keeps it; `set KEY=` sets it empty). See `examples/`.
+
+Comments in a config (lines starting with `;` or `#`) are kept when it is
+saved, with the key or section that follows them; a comment block at the
+top, set apart by a blank line, stays at the top.
+
+A program's own setup script can hand the settings to `ezconfig ask` and
+act on its exit status; see `examples/setup-script/`.
 
 Run `ezconfig help` (or `help` inside the shell) for the full command list.
 

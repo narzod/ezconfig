@@ -96,8 +96,26 @@ type Schema struct {
 // askInfo is the [@ask] block: what the ask command shows first, and
 // which sections it walks through, in order.
 type askInfo struct {
-	title, doc string
-	sections   []string // "" is the root; empty means every section with rules
+	title, doc  string
+	sections    []string // "" is the root; empty means every section with rules
+	application string   // what the schema ships with, e.g. "SignLoop 2.4"
+	version     string   // the schema's own version
+}
+
+// Identity says what the schema is, from [@ask] application= and version=:
+// "version 3, for SignLoop 2.4", or either half, or "" without them.
+func (s *Schema) Identity() string {
+	if s == nil || s.ask == nil {
+		return ""
+	}
+	var parts []string
+	if s.ask.version != "" {
+		parts = append(parts, "version "+s.ask.version)
+	}
+	if s.ask.application != "" {
+		parts = append(parts, "for "+s.ask.application)
+	}
+	return strings.Join(parts, ", ")
 }
 
 var (
@@ -217,6 +235,10 @@ func parseAsk(sec *section) (*askInfo, error) {
 			su.title = e.value
 		case "doc":
 			su.doc = e.value
+		case "application":
+			su.application = e.value
+		case "version":
+			su.version = e.value
 		case "sections":
 			for _, n := range strings.Split(e.value, ",") {
 				n = strings.TrimSpace(n)
@@ -229,7 +251,7 @@ func parseAsk(sec *section) (*askInfo, error) {
 				su.sections = append(su.sections, n)
 			}
 		default:
-			return nil, fmt.Errorf("unknown field %q (fields: title, doc, sections)", e.key)
+			return nil, fmt.Errorf("unknown field %q (fields: title, doc, sections, application, version)", e.key)
 		}
 	}
 	return su, nil
@@ -611,13 +633,13 @@ func (s *Schema) EffectiveNotes(cfg *Ini) (*Ini, []note) {
 			}
 			v, err := r.check(e.value)
 			if err == nil {
-				kept = append(kept, entry{e.key, v})
+				kept = append(kept, entry{key: e.key, value: v})
 				continue
 			}
 			addr := address(name, e.key, cfg.delim)
 			if def, ok := s.defaultFor(name, e.key); ok {
 				def, _ = r.check(def) // defaults are checked when the schema loads
-				kept = append(kept, entry{e.key, def})
+				kept = append(kept, entry{key: e.key, value: def})
 				notes = append(notes, note{name, e.key, fmt.Sprintf("%s: %v; using the default (%s)", addr, err, def)})
 			} else {
 				notes = append(notes, note{name, e.key, fmt.Sprintf("%s: %v; left out (no default)", addr, err)})

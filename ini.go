@@ -21,11 +21,13 @@ import (
 type entry struct {
 	key   string
 	value string
+	notes []string // comment lines just above the key, kept on save
 }
 
 type section struct {
 	name    string
 	entries []entry
+	notes   []string // comment lines just above the [name] header
 }
 
 func (s *section) find(key string) int {
@@ -40,6 +42,10 @@ func (s *section) find(key string) int {
 type Ini struct {
 	root     section
 	sections []*section
+
+	// Comments that belong to the file rather than to a key or section: a
+	// block at the very top followed by a blank line, and any at the end.
+	head, tail []string
 
 	// delim separates section and key in an address ("net.port"); on its
 	// own it names the root (the keys before any section).
@@ -73,20 +79,35 @@ func LoadIni(path, sep string) (*Ini, error) {
 }
 
 func (ini *Ini) parse(r io.Reader) error {
+	// Comment lines are kept with whatever follows them: a key or a
+	// section header. A comment block at the very top that a blank line
+	// separates from the rest is the file's own; so is one at the end.
 	cur := &ini.root
 	sc := bufio.NewScanner(r)
 	n := 0
+	var pending []string
+	started := false // a key or section has been read
 	for sc.Scan() {
 		n++
 		line := strings.TrimSpace(sc.Text())
-		if line == "" || line[0] == ';' || line[0] == '#' {
+		switch {
+		case line == "":
+			if !started && len(pending) > 0 && ini.head == nil {
+				ini.head, pending = pending, nil
+			}
+			continue
+		case line[0] == ';' || line[0] == '#':
+			pending = append(pending, line)
 			continue
 		}
+		started = true
 		if line[0] == '[' {
 			if !strings.HasSuffix(line, "]") {
 				return &SyntaxError{n, "unterminated section header"}
 			}
 			cur = ini.ensureSection(strings.TrimSpace(line[1 : len(line)-1]))
+			cur.notes = append(cur.notes, pending...)
+			pending = nil
 			continue
 		}
 		k, v, ok := strings.Cut(line, "=")
@@ -94,6 +115,16 @@ func (ini *Ini) parse(r io.Reader) error {
 			return &SyntaxError{n, "expected key=value"}
 		}
 		setIn(cur, strings.TrimSpace(k), strings.TrimSpace(v))
+		if len(pending) > 0 {
+			i := cur.find(strings.TrimSpace(k))
+			cur.entries[i].notes = append(cur.entries[i].notes, pending...)
+			pending = nil
+		}
+	}
+	if !started && ini.head == nil {
+		ini.head = pending
+	} else {
+		ini.tail = pending
 	}
 	return sc.Err()
 }
@@ -103,7 +134,7 @@ func setIn(s *section, key, value string) {
 		s.entries[i].value = value
 		return
 	}
-	s.entries = append(s.entries, entry{key, value})
+	s.entries = append(s.entries, entry{key: key, value: value})
 }
 
 func (ini *Ini) section(name string) *section {
@@ -349,20 +380,45 @@ func (ini *Ini) Sections() []string {
 
 // Save writes the Ini to path, root keys first, then each section.
 func (ini *Ini) Save(path string) error {
+	return writeAtomic(path, []byte(ini.Text()))
+}
+
+// Text is the config as it is saved: comments kept with what follows
+// them, a blank line before each section.
+func (ini *Ini) Text() string {
 	var b strings.Builder
-	for _, e := range ini.root.entries {
-		fmt.Fprintf(&b, "%s=%s\n", e.key, e.value)
+	lines := func(ls []string) {
+		for _, l := range ls {
+			b.WriteString(l + "\n")
+		}
 	}
-	for _, s := range ini.sections {
+	lines(ini.head)
+	gap := func() {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
+	}
+	if len(ini.head) > 0 && len(ini.root.entries) > 0 {
+		gap()
+	}
+	for _, e := range ini.root.entries {
+		lines(e.notes)
+		fmt.Fprintf(&b, "%s=%s\n", e.key, e.value)
+	}
+	for _, s := range ini.sections {
+		gap()
+		lines(s.notes)
 		fmt.Fprintf(&b, "[%s]\n", s.name)
 		for _, e := range s.entries {
+			lines(e.notes)
 			fmt.Fprintf(&b, "%s=%s\n", e.key, e.value)
 		}
 	}
-	return writeAtomic(path, []byte(b.String()))
+	if len(ini.tail) > 0 {
+		gap()
+		lines(ini.tail)
+	}
+	return b.String()
 }
 
 // writeAtomic writes data to a temporary file in path's folder, then
