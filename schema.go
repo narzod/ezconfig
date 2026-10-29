@@ -33,7 +33,7 @@ package main
 // format (how to write the value, in words: shown instead of the pattern)
 // and prompt (the question set asks; doc otherwise).
 //
-// Section fields: title, doc, and keys (the order setup and describe use;
+// Section fields: title, doc, and keys (the order ask and explain use;
 // keys not listed follow in the order of their rules). [@section .] is the
 // root keys.
 //
@@ -90,12 +90,12 @@ type Schema struct {
 	defaults *Ini
 	rules    []*rule
 	sections []*sectionInfo
-	setup    *setupInfo // nil without a [@setup] block
+	ask      *askInfo // nil without a [@ask] block
 }
 
-// setupInfo is the [@setup] block: what the setup command shows first, and
+// askInfo is the [@ask] block: what the ask command shows first, and
 // which sections it walks through, in order.
-type setupInfo struct {
+type askInfo struct {
 	title, doc string
 	sections   []string // "" is the root; empty means every section with rules
 }
@@ -147,20 +147,20 @@ func LoadSchema(path string) (*Schema, error) {
 				return nil, fail(err)
 			}
 			s.sections = append(s.sections, si)
-		case "setup":
+		case "ask":
 			if name != "" {
-				return nil, fail(fmt.Errorf("[@setup] takes no name"))
+				return nil, fail(fmt.Errorf("[@ask] takes no name"))
 			}
-			if s.setup != nil {
-				return nil, fail(fmt.Errorf("only one [@setup] block is allowed"))
+			if s.ask != nil {
+				return nil, fail(fmt.Errorf("only one [@ask] block is allowed"))
 			}
-			su, err := parseSetup(sec)
+			su, err := parseAsk(sec)
 			if err != nil {
 				return nil, fail(err)
 			}
-			s.setup = su
+			s.ask = su
 		default:
-			return nil, fail(fmt.Errorf("unknown block @%s (blocks: @rule, @section, @setup)", keyword))
+			return nil, fail(fmt.Errorf("unknown block @%s (blocks: @rule, @section, @ask)", keyword))
 		}
 	}
 	// Defaults must follow their own rules.
@@ -182,11 +182,11 @@ func LoadSchema(path string) (*Schema, error) {
 			}
 		}
 	}
-	// [@setup] sections= may only name sections the schema knows.
-	if s.setup != nil {
-		for _, name := range s.setup.sections {
+	// [@ask] sections= may only name sections the schema knows.
+	if s.ask != nil {
+		for _, name := range s.ask.sections {
 			if !s.knowsSection(name) {
-				return nil, &SchemaError{fmt.Sprintf("[@setup]: sections= names %s, which has no rules, defaults or [@section] block",
+				return nil, &SchemaError{fmt.Sprintf("[@ask]: sections= names %s, which has no rules, defaults or [@section] block",
 					sectionLabelFor(name))}
 			}
 		}
@@ -209,8 +209,8 @@ func (s *Schema) knowsSection(name string) bool {
 	return ok && (name != "" || len(keys) > 0)
 }
 
-func parseSetup(sec *section) (*setupInfo, error) {
-	su := &setupInfo{}
+func parseAsk(sec *section) (*askInfo, error) {
+	su := &askInfo{}
 	for _, e := range sec.entries {
 		switch e.key {
 		case "title":
@@ -235,27 +235,27 @@ func parseSetup(sec *section) (*setupInfo, error) {
 	return su, nil
 }
 
-// SetupSections lists the sections setup walks through: those named by
-// [@setup] sections=, or else every known section that has rules.
-func (s *Schema) SetupSections(cfg *Ini) []string {
+// AskSections lists the sections ask walks through: those named by
+// [@ask] sections=, or else every known section that has rules.
+func (s *Schema) AskSections(cfg *Ini) []string {
 	if s == nil {
 		return nil
 	}
-	if s.setup != nil && len(s.setup.sections) > 0 {
-		return s.setup.sections
+	if s.ask != nil && len(s.ask.sections) > 0 {
+		return s.ask.sections
 	}
 	var out []string
 	for _, sec := range s.SectionsKnown(cfg) {
-		if len(s.SetupKeys(cfg, sec)) > 0 {
+		if len(s.AskKeys(cfg, sec)) > 0 {
 			out = append(out, sec)
 		}
 	}
 	return out
 }
 
-// SetupKeys lists the keys setup asks about in a section: those with rules,
+// AskKeys lists the keys ask asks about in a section: those with rules,
 // plus any the section's keys= names, in KeysIn order.
-func (s *Schema) SetupKeys(cfg *Ini, sec string) []string {
+func (s *Schema) AskKeys(cfg *Ini, sec string) []string {
 	listed := map[string]bool{}
 	if si := s.sectionInfo(sec); si != nil {
 		for _, k := range si.keys {
@@ -271,8 +271,8 @@ func (s *Schema) SetupKeys(cfg *Ini, sec string) []string {
 	return out
 }
 
-// SectionHeading is the line that introduces a section in describe and
-// setup: [name], then its title and description if it has them.
+// SectionHeading is the line that introduces a section in explain and
+// ask: [name], then its title and description if it has them.
 func (s *Schema) SectionHeading(sec string) string {
 	head := "[" + sectionLabelFor(sec) + "]"
 	if si := s.sectionInfo(sec); si != nil {
@@ -530,7 +530,7 @@ func (r *rule) choices() []string {
 	return nil
 }
 
-// summary describes the type in one line, for describe.
+// summary describes the type in one line, for explain.
 func (r *rule) summary() string {
 	switch r.typ {
 	case "string":
@@ -683,7 +683,7 @@ func (s *Schema) Problems(cfg *Ini) []string {
 // Describe explains one key: its rule, default and current value, and
 // where that value comes from. ok is false if neither the schema nor the
 // config knows the key.
-func (s *Schema) Describe(cfg *Ini, path string) (lines []string, ok bool) {
+func (s *Schema) Explain(cfg *Ini, path string) (lines []string, ok bool) {
 	sec, key := cfg.splitPath(path)
 	r := s.ruleFor(sec, key)
 	def, hasDef := s.defaultFor(sec, key)
@@ -855,8 +855,8 @@ func (s *Schema) sectionInfo(name string) *sectionInfo {
 	return nil
 }
 
-// KeysIn lists a section's keys ("" for the root) in the order setup and
-// describe present them: the section's keys= list first, then keys with
+// KeysIn lists a section's keys ("" for the root) in the order ask and
+// explain present them: the section's keys= list first, then keys with
 // rules in the order of the rules, then keys that only have defaults, then
 // keys only the config has.
 func (s *Schema) KeysIn(cfg *Ini, sec string) []string {
@@ -929,9 +929,9 @@ func (s *Schema) SectionsKnown(cfg *Ini) []string {
 	return out
 }
 
-// DescribeSection lists every known key of a section ("" for the root),
+// ExplainSection lists every known key of a section ("" for the root),
 // one line each, under the section's title and description if it has one.
-func (s *Schema) DescribeSection(cfg *Ini, sec string) []string {
+func (s *Schema) ExplainSection(cfg *Ini, sec string) []string {
 	var lines []string
 	if sec != "" || s.sectionInfo(sec) != nil {
 		lines = append(lines, s.SectionHeading(sec))
@@ -956,29 +956,42 @@ func (s *Schema) DescribeSection(cfg *Ini, sec string) []string {
 	return lines
 }
 
-// DescribeAll describes every known section, with a blank line between.
-func (s *Schema) DescribeAll(cfg *Ini) []string {
+// ExplainAll describes every known section, with a blank line between.
+func (s *Schema) ExplainAll(cfg *Ini) []string {
 	var lines []string
 	for i, sec := range s.SectionsKnown(cfg) {
 		if i > 0 {
 			lines = append(lines, "")
 		}
-		lines = append(lines, s.DescribeSection(cfg, sec)...)
+		lines = append(lines, s.ExplainSection(cfg, sec)...)
 	}
 	return lines
 }
 
-// DescribeName describes NAME the way the describe command reads it: a
-// key when it contains the delimiter, the root keys when it is the
-// delimiter, a whole section when it names one, and otherwise a root key.
-func (s *Schema) DescribeName(cfg *Ini, name string) ([]string, bool) {
+// ExplainName explains NAME the way the explain command reads it. The
+// delimiter alone is the root keys, and NAME with a trailing delimiter is
+// the section NAME. Otherwise a bare name is the root key, and also the
+// section of that name if there is one: both are shown, the key first.
+func (s *Schema) ExplainName(cfg *Ini, name string) ([]string, bool) {
+	d := cfg.delim
 	switch {
-	case name == cfg.delim:
-		return s.DescribeSection(cfg, ""), true
-	case !strings.Contains(name, cfg.delim) && s.isSection(cfg, name):
-		return s.DescribeSection(cfg, name), true
+	case name == d:
+		return s.ExplainSection(cfg, ""), true
+	case strings.HasSuffix(name, d) && !strings.Contains(strings.TrimSuffix(name, d), d):
+		sec := strings.TrimSuffix(name, d)
+		if !s.isSection(cfg, sec) {
+			return nil, false
+		}
+		return s.ExplainSection(cfg, sec), true
 	}
-	return s.Describe(cfg, name)
+	lines, ok := s.Explain(cfg, name)
+	if !strings.Contains(name, d) && s.isSection(cfg, name) {
+		if ok {
+			lines = append(lines, "")
+		}
+		return append(lines, s.ExplainSection(cfg, name)...), true
+	}
+	return lines, ok
 }
 
 func (s *Schema) isSection(cfg *Ini, name string) bool {

@@ -163,26 +163,26 @@ func TestEffectiveAndProblems(t *testing.T) {
 	}
 }
 
-func TestDescribe(t *testing.T) {
+func TestExplain(t *testing.T) {
 	s := loadTestSchema(t)
 	cfg := NewIni()
 	cfg.parse(strings.NewReader("[net]\nport=9090\n"))
 
-	got, ok := s.Describe(cfg, "net.port")
+	got, ok := s.Explain(cfg, "net.port")
 	want := []string{"net.port", "type: int, 1 to 65535", "default: 8080",
 		"value: 9090 (set in the config)", "doc: Port the player listens on"}
 	if !ok || !reflect.DeepEqual(got, want) {
 		t.Errorf("net.port:\n got %q\nwant %q", got, want)
 	}
-	got, _ = s.Describe(cfg, "player.site")
+	got, _ = s.Explain(cfg, "player.site")
 	if !reflect.DeepEqual(got, []string{"player.site", "type: string", "required: yes", "default: none", "value: not set"}) {
 		t.Errorf("player.site: %q", got)
 	}
-	got, _ = s.Describe(cfg, "display.background")
+	got, _ = s.Explain(cfg, "display.background")
 	if got[len(got)-1] != "value: black (the default)" {
 		t.Errorf("display.background: %q", got)
 	}
-	if _, ok := s.Describe(cfg, "nope.nothing"); ok {
+	if _, ok := s.Explain(cfg, "nope.nothing"); ok {
 		t.Error("nope.nothing: expected not found")
 	}
 }
@@ -262,8 +262,8 @@ func TestOneShotSchema(t *testing.T) {
 	if code, out, _ := run(t, cfg, ".", "check"); code != 1 || !strings.Contains(out, "player.site: required") {
 		t.Errorf("check on an invalid config: %d %q", code, out)
 	}
-	if code, out, _ := run(t, cfg, ".", "describe", "net.port"); code != 0 || !strings.HasPrefix(out, "net.port\ntype: int") {
-		t.Errorf("describe: %d %q", code, out)
+	if code, out, _ := run(t, cfg, ".", "explain", "net.port"); code != 0 || !strings.HasPrefix(out, "net.port\ntype: int") {
+		t.Errorf("explain: %d %q", code, out)
 	}
 	writeFile(t, dir, "schema.ini", "[@rule a]\ntype=prot\n")
 	if code, _, _ := run(t, cfg, ".", "list"); code != 2 {
@@ -286,7 +286,7 @@ func TestCompleteWithSchema(t *testing.T) {
 		{"get net.", []string{"net.port "}},       // a schema default the config never sets
 		{"unset net.", nil},                       // only what the config sets
 		{"set player.n", []string{"player.name"}}, // config key; Enter asks, or type "="
-		{"describe display.ro", []string{"display.rotation "}},
+		{"explain display.ro", []string{"display.rotation "}},
 	}
 	for _, c := range cases {
 		head, cands, _ := r.complete(c.line, len(c.line))
@@ -341,14 +341,14 @@ func TestValidOnly(t *testing.T) {
 		t.Errorf("notes:\n got %q\nwant %q", texts, want)
 	}
 
-	// describe says what applications get, and why.
-	lines, _ := s.Describe(cfg, "net.port")
+	// explain says what applications get, and why.
+	lines, _ := s.Explain(cfg, "net.port")
 	if got := lines[3]; got != "value: 8080 (the default, because the config's value is invalid: 70000 is above the maximum (65535))" {
-		t.Errorf("describe net.port: %q", got)
+		t.Errorf("explain net.port: %q", got)
 	}
-	lines, _ = s.Describe(cfg, "display.scale")
+	lines, _ = s.Explain(cfg, "display.scale")
 	if got := lines[3]; !strings.HasPrefix(got, "value: none (the config's value is invalid") {
-		t.Errorf("describe display.scale: %q", got)
+		t.Errorf("explain display.scale: %q", got)
 	}
 
 	// An invalid value isn't also reported as missing when required.
@@ -386,7 +386,7 @@ func TestOneShotValidOnly(t *testing.T) {
 	if code != 0 || errOut != "" {
 		t.Errorf("list player warns about other sections: %d %q", code, errOut)
 	}
-	code, out, _ = run(t, cfg, ".", "dump", "display")
+	code, out, _ = run(t, cfg, ".", "emit", "display")
 	if code != 0 || strings.Contains(out, "scale") {
 		t.Errorf("dump display includes the invalid scale: %d %q", code, out)
 	}

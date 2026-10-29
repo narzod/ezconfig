@@ -29,12 +29,13 @@ func TestComplete(t *testing.T) {
 		line string
 		want []string
 	}{
-		{"", []string{"changes ", "check ", "copy ", "delim ", "describe ", "dump ", "get ", "help ", "history ", "keys ", "list ", "move ", "path ", "quit ",
-			"revert ", "save ", "sections ", "set ", "setup ", "status ", "unset ", "version ", "wipe "}},
-		{"se", []string{"sections ", "set ", "setup "}},
+		{"", []string{"ask ", "changes ", "check ", "copy ", "delim ", "emit ", "explain ", "get ", "help ", "history ", "keys ", "list ", "move ", "path ", "quit ",
+			"revert ", "save ", "sections ", "set ", "status ", "unset ", "version ", "wipe "}},
+		{"se", []string{"sections ", "set "}}, // ask no longer clashes with set
 		{"delim ", []string{"/", ":", "|"}},
-		{"d", []string{"delim ", "describe ", "dump "}},
-		{"du", []string{"dump "}},
+		{"d", []string{"delim "}},
+		{"e", []string{"emit ", "explain "}},
+		{"em", []string{"emit "}},
 		{"w", []string{"wipe "}},
 		{"h", []string{"help ", "history "}},
 		{"copy ", []string{". ", "display ", "net "}},
@@ -61,7 +62,7 @@ func TestComplete(t *testing.T) {
 		{"wipe net n", []string{"net "}},
 		{"list ", []string{".", "display", "net"}},
 		{"list net ", nil},
-		{"dump ", []string{".", "display", "net"}},
+		{"emit ", []string{".", "display", "net"}},
 		{"l", []string{"list "}},
 		{"c", []string{"changes ", "check ", "copy "}},
 		{"m", []string{"move "}},

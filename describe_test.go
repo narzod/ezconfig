@@ -60,22 +60,22 @@ func TestSections(t *testing.T) {
 		"app.retries - required, a whole number from 0 to 9",
 		"app.extra - no rule",
 	}
-	got, ok := s.DescribeName(cfg, "app")
+	got, ok := s.ExplainName(cfg, "app")
 	if !ok || !reflect.DeepEqual(got, want) {
-		t.Errorf("describe app:\n got %q\nwant %q", got, want)
+		t.Errorf("explain app:\n got %q\nwant %q", got, want)
 	}
-	if got, _ := s.DescribeName(cfg, "."); !reflect.DeepEqual(got, []string{"name: Name of this player - text"}) {
-		t.Errorf("describe .: %q", got)
+	if got, _ := s.ExplainName(cfg, "."); !reflect.DeepEqual(got, []string{"name: Name of this player - text"}) {
+		t.Errorf("explain .: %q", got)
 	}
-	if got, _ := s.DescribeName(cfg, "app.locale"); !reflect.DeepEqual(got[:3],
+	if got, _ := s.ExplainName(cfg, "app.locale"); !reflect.DeepEqual(got[:3],
 		[]string{"app.locale", "type: string matching [a-z]{2}(-[A-Z]{2})?", "format: language code, optionally with region (e.g. en-US)"}) {
-		t.Errorf("describe app.locale: %q", got)
+		t.Errorf("explain app.locale: %q", got)
 	}
-	all := s.DescribeAll(cfg)
+	all := s.ExplainAll(cfg)
 	if all[0] != "name: Name of this player - text" || all[1] != "" || all[2] != want[0] {
-		t.Errorf("describe all: %q", all)
+		t.Errorf("explain all: %q", all)
 	}
-	if _, ok := s.DescribeName(cfg, "nope"); ok {
+	if _, ok := s.ExplainName(cfg, "nope"); ok {
 		t.Error("nope: expected not found")
 	}
 
@@ -140,11 +140,11 @@ func TestAskSet(t *testing.T) {
 	})
 }
 
-func TestSetup(t *testing.T) {
+func TestAsk(t *testing.T) {
 	dir := t.TempDir()
 	src := sectionSchema + `
-[@setup]
-title=Player setup
+[@ask]
+title=Player questions
 sections=app,.
 `
 	s, err := LoadSchema(writeFile(t, dir, "schema.ini", src))
@@ -155,12 +155,12 @@ sections=app,.
 	ini.parse(strings.NewReader("[app]\nextra=1\n"))
 	r := &Repl{ini: ini, saved: ini.Clone(), schema: s, path: filepath.Join(dir, "config.ini"), interactive: true}
 
-	if got := s.SetupSections(ini); !reflect.DeepEqual(got, []string{"app", ""}) {
-		t.Errorf("SetupSections: %q", got)
+	if got := s.AskSections(ini); !reflect.DeepEqual(got, []string{"app", ""}) {
+		t.Errorf("AskSections: %q", got)
 	}
 	// Keys with rules (or named by keys=), in KeysIn order; extra has no rule.
-	if got := s.SetupKeys(ini, "app"); !reflect.DeepEqual(got, []string{"locale", "mode", "retries"}) {
-		t.Errorf("SetupKeys: %q", got)
+	if got := s.AskKeys(ini, "app"); !reflect.DeepEqual(got, []string{"locale", "mode", "retries"}) {
+		t.Errorf("AskKeys: %q", got)
 	}
 
 	var asked []string
@@ -181,8 +181,8 @@ sections=app,.
 	saves := 0
 	yes := func(q string) bool { question = q; return true }
 	save := func() bool { saves++; return true }
-	if got := r.setup(nil, read, yes, save, false); got != setupDone {
-		t.Errorf("setup: result %d", got)
+	if got := r.askAll(nil, read, yes, save, false); got != askDone {
+		t.Errorf("ask: result %d", got)
 	}
 	if !reflect.DeepEqual(asked, []string{"app.locale> ", "app.mode> ", "app.retries> ", "app.retries> ", "name> "}) {
 		t.Errorf("asked: %q", asked)
@@ -202,7 +202,7 @@ sections=app,.
 		t.Error("Enter wrote the default into the config")
 	}
 	if len(r.session) != 0 {
-		t.Errorf("setup answers went into history: %q", r.session)
+		t.Errorf("ask answers went into history: %q", r.session)
 	}
 
 	// The up arrow offers the current value, then the default.
@@ -214,29 +214,29 @@ sections=app,.
 		t.Errorf("recall, set: %q", got)
 	}
 
-	// setup SECTION walks one section; Ctrl+C stops the walk.
+	// ask SECTION walks one section; Ctrl+C stops the walk.
 	asked = nil
 	stop := func(p string, _, _ []string) (string, error) {
 		asked = append(asked, p)
 		return "", errors.New("aborted")
 	}
-	if got := r.setup([]string{"app"}, stop, yes, save, true); got != setupCancelled || len(asked) != 1 {
+	if got := r.askAll([]string{"app"}, stop, yes, save, true); got != askStopped || len(asked) != 1 {
 		t.Errorf("one-shot cancel: result %d, asked %q", got, asked)
 	}
-	if got := r.setup([]string{"app"}, stop, yes, save, false); got != setupUnsaved {
+	if got := r.askAll([]string{"app"}, stop, yes, save, false); got != askUnsaved {
 		t.Errorf("shell cancel: result %d", got)
 	}
 
 	// Earlier unsaved changes are counted in the save question.
 	r.saved = ini.Clone()
 	ini.Set("app.extra", "2")
-	r.setup([]string{"app"}, func(p string, _, _ []string) (string, error) {
+	r.askAll([]string{"app"}, func(p string, _, _ []string) (string, error) {
 		if p == "app.mode> " {
 			return "kiosk", nil
 		}
 		return "", nil
 	}, yes, func() bool { return true }, false)
-	if question != "save 2 changes to config.ini (1 made before setup)?" {
+	if question != "save 2 changes to config.ini (1 made earlier)?" {
 		t.Errorf("save question with earlier changes: %q", question)
 	}
 	ini.Set("app.mode", "desktop")
@@ -249,33 +249,33 @@ sections=app,.
 		}
 		return "", nil
 	}
-	if got := r.setup([]string{"app"}, change, no, save, true); got != setupCancelled {
+	if got := r.askAll([]string{"app"}, change, no, save, true); got != askStopped {
 		t.Errorf("one-shot decline: result %d", got)
 	}
 	ini.Set("app.mode", "desktop") // a real one-shot run would have exited, dropping kiosk
-	if got := r.setup([]string{"app"}, change, no, save, false); got != setupUnsaved || saves != 1 {
+	if got := r.askAll([]string{"app"}, change, no, save, false); got != askUnsaved || saves != 1 {
 		t.Errorf("shell decline: result %d, saves %d", got, saves)
 	}
 
-	// An invalid current value can't be kept with Enter during setup.
+	// An invalid current value can't be kept with Enter during ask.
 	ini.Set("app.mode", "tablet")
 	if why := r.needsAnswer("app", "mode", s.ruleFor("app", "mode")); why == "" {
 		t.Error("invalid value: Enter should be refused")
 	}
 
-	// Without [@setup] sections=, every section with rules, root first.
+	// Without [@ask] sections=, every section with rules, root first.
 	plain, _ := LoadSchema(writeFile(t, dir, "plain.ini", sectionSchema))
-	if got := plain.SetupSections(ini); !reflect.DeepEqual(got, []string{"", "app"}) {
+	if got := plain.AskSections(ini); !reflect.DeepEqual(got, []string{"", "app"}) {
 		t.Errorf("default sections: %q", got)
 	}
 }
 
-func TestSetupErrors(t *testing.T) {
+func TestAskErrors(t *testing.T) {
 	cases := map[string]string{
-		"[@setup x]\ntitle=a\n":                 "takes no name",
-		"[@setup]\ncolour=red\n":                "unknown field",
-		"[@setup]\nsections=nope\n":             "nope, which has no rules",
-		"[@rule a.b]\n[@setup]\nsections=a,.\n": "names ., which",
+		"[@ask x]\ntitle=a\n":                 "takes no name",
+		"[@ask]\ncolour=red\n":                "unknown field",
+		"[@ask]\nsections=nope\n":             "nope, which has no rules",
+		"[@rule a.b]\n[@ask]\nsections=a,.\n": "names ., which",
 	}
 	for src, want := range cases {
 		_, err := LoadSchema(writeFile(t, t.TempDir(), "schema.ini", src))
@@ -283,4 +283,44 @@ func TestSetupErrors(t *testing.T) {
 			t.Errorf("%q: got %v, want an error containing %q", src, err, want)
 		}
 	}
+}
+
+func TestExplainSameName(t *testing.T) {
+	src := `[@rule net]
+doc=A root key named like a section
+
+[@section net]
+title=Network
+
+[@rule net.port]
+type=int
+`
+	s, err := LoadSchema(writeFile(t, t.TempDir(), "schema.ini", src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := NewIni()
+	both, ok := s.ExplainName(cfg, "net")
+	if !ok || both[0] != "net" || !contains(both, "") || !contains(both, "[net] Network") {
+		t.Errorf("explain net: %q", both)
+	}
+	sec, ok := s.ExplainName(cfg, "net.")
+	if !ok || sec[0] != "[net] Network" || len(sec) != 2 {
+		t.Errorf("explain net.: %q", sec)
+	}
+	if _, ok := s.ExplainName(cfg, "nope."); ok {
+		t.Error("explain nope.: expected not found")
+	}
+	if key, _ := s.ExplainName(cfg, "net.port"); key[0] != "net.port" {
+		t.Errorf("explain net.port: %q", key)
+	}
+}
+
+func contains(list []string, s string) bool {
+	for _, l := range list {
+		if l == s {
+			return true
+		}
+	}
+	return false
 }

@@ -31,10 +31,10 @@ move SRC DEST      move or rename a section
 keys [SECTION]     list key names for everything, or for SECTION
 sections           list section names
 list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
-dump [SECTION]     print everything, or SECTION, as JSON
+emit [SECTION]     print everything, or SECTION, as JSON for programs
 check              report values that break the schema
-describe [NAME...] explain keys, or list a section's keys
-setup [SECTION]    ask for each value in turn, then offer to save
+explain [NAME...]  explain keys and sections, or everything
+ask [SECTION]      ask for each value in turn, then offer to save
 status             show file details and session settings
 changes [SECTION]  show unsaved changes
 path               show the config's full path
@@ -161,8 +161,8 @@ func main() {
 		if abs, err := filepath.Abs(path); err == nil {
 			path = abs
 		}
-		if cl.cmd == "setup" {
-			os.Exit(oneShotSetup(path, cl.delim, cl.schema, cl.args))
+		if cl.cmd == "ask" {
+			os.Exit(oneShotAsk(path, cl.delim, cl.schema, cl.args))
 		}
 		os.Exit(oneShot(path, cl.delim, cl.schema, cl.cmd, cl.args, os.Stdout, os.Stderr))
 	}
@@ -413,9 +413,9 @@ func (r *Repl) exec(line string) bool {
 		r.warnScope(firstOr(args, ""))
 		printLines(lines)
 
-	case "dump":
+	case "emit":
 		if len(args) > 1 {
-			errorf("usage: dump [SECTION]")
+			errorf("usage: emit [SECTION]")
 			break
 		}
 		out, ok, err := r.view().JSON(firstOr(args, ""))
@@ -445,17 +445,17 @@ func (r *Repl) exec(line string) bool {
 			fmt.Println("no problems found")
 		}
 
-	case "describe":
+	case "explain":
 		if r.schema == nil {
 			errorf("no schema (put %s next to the config, or start with -s FILE)", schemaName)
 			break
 		}
 		if len(args) == 0 {
-			printLines(r.schema.DescribeAll(r.ini))
+			printLines(r.schema.ExplainAll(r.ini))
 			break
 		}
 		for i, p := range args {
-			lines, ok := r.schema.DescribeName(r.ini, p)
+			lines, ok := r.schema.ExplainName(r.ini, p)
 			if !ok {
 				errorf("not found: %s", p)
 				continue
@@ -466,8 +466,8 @@ func (r *Repl) exec(line string) bool {
 			printLines(lines)
 		}
 
-	case "setup":
-		r.setup(args, r.readAnswer, r.confirmAnswer, func() bool { return r.save("") }, false)
+	case "ask":
+		r.askAll(args, r.readAnswer, r.confirmAnswer, func() bool { return r.save("") }, false)
 
 	case "status":
 		r.status()
@@ -584,7 +584,16 @@ func (r *Repl) changedOnDisk() bool {
 }
 
 func (r *Repl) status() {
-	fmt.Println("file:", r.path)
+	// The two files.
+	fmt.Println("config:", r.path)
+	if r.schema != nil {
+		fmt.Printf("schema: %s (%s)\n", r.schema.path, plural(r.schema.Rules(), "rule"))
+	} else {
+		fmt.Println("schema: none")
+	}
+
+	// The config file.
+	fmt.Println()
 	if r.disk.exists {
 		fmt.Printf("on disk: yes, %s, modified %s\n",
 			humanSize(r.disk.size), r.disk.modTime.Format("2006-01-02 15:04"))
@@ -592,12 +601,15 @@ func (r *Repl) status() {
 		fmt.Println("on disk: no, will be created on save")
 	}
 	fmt.Println("changed on disk since load:", yesNo(r.changedOnDisk()))
-	if n := r.unsaved(); n > 0 {
-		fmt.Printf("unsaved changes: yes (%d)\n", n)
-	} else {
-		fmt.Println("unsaved changes: no")
-	}
 	fmt.Println("writable:", yesNo(writable(r.path)))
+	if n := r.unsaved(); n > 0 {
+		fmt.Printf("unsaved changes: %d\n", n)
+	} else {
+		fmt.Println("unsaved changes: none")
+	}
+
+	// What it holds.
+	fmt.Println()
 	total, root := r.ini.KeyCount()
 	fmt.Println("sections:", len(r.ini.Sections()))
 	if r.schema != nil {
@@ -606,11 +618,9 @@ func (r *Repl) status() {
 	} else {
 		fmt.Printf("keys: %d (%d root)\n", total, root)
 	}
-	if r.schema != nil {
-		fmt.Printf("schema: %s (%s)\n", r.schema.path, plural(r.schema.Rules(), "rule"))
-	} else {
-		fmt.Println("schema: none")
-	}
+
+	// This session.
+	fmt.Println()
 	switch {
 	case !r.historyOn():
 		fmt.Println("delimiter:", r.ini.delim, "(this session only)")

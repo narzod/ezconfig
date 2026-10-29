@@ -5,7 +5,7 @@ package main
 //	ezconfig [-c FILE] [-s FILE] [-d CHAR] COMMAND [ARGS...]
 //
 // One-shot mode offers every command that reads, plus set and unset:
-// get, keys, sections, list, dump, check, describe, set, unset (and help,
+// get, keys, sections, list, dump, check, explain, set, unset (and help,
 // version). With a schema, reading commands see the effective config
 // (defaults filled in) and set refuses values that break it.
 // Everything else stays in the interactive shell.
@@ -29,15 +29,15 @@ const (
 	exitFile      = 3 // config or schema unreadable (or config unwritable)
 	exitArgs      = 4 // bad arguments
 	exitNotFound  = 5 // key or section not found
-	exitCancelled = 6 // setup stopped or not saved; nothing written
+	exitCancelled = 6 // ask stopped or not saved; nothing written
 )
 
 // oneShotCommands are available from the command line; shellOnly are
 // recognised so they can be refused with a helpful message.
 var (
 	oneShotCommands = map[string]bool{
-		"get": true, "keys": true, "sections": true, "list": true, "dump": true,
-		"check": true, "describe": true, "setup": true, "set": true, "unset": true, "help": true, "version": true,
+		"get": true, "keys": true, "sections": true, "list": true, "emit": true,
+		"check": true, "explain": true, "ask": true, "set": true, "unset": true, "help": true, "version": true,
 	}
 	shellOnly = map[string]bool{
 		"wipe": true, "copy": true, "move": true, "status": true, "save": true, "revert": true,
@@ -56,10 +56,10 @@ unset KEY...       remove keys and save
 keys [SECTION]     list key names for everything, or for SECTION
 sections           list section names
 list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
-dump [SECTION]     print everything, or SECTION, as JSON
+emit [SECTION]     print everything, or SECTION, as JSON for programs
 check              report values that break the schema
-describe [NAME...] explain keys, or list a section's keys
-setup [SECTION]    ask for each value, then offer to save (needs a terminal)
+explain [NAME...]  explain keys and sections, or everything
+ask [SECTION]      ask for each value, then offer to save (needs a terminal)
 help               show this text
 version            show the program version
 
@@ -75,7 +75,7 @@ exit status:
 3  config or schema missing or unreadable
 4  bad arguments
 5  key or section not found
-6  setup stopped, or its changes not saved`
+6  ask stopped, or its changes not saved`
 
 // oneShot runs cmd with args against the config at path and returns the
 // exit status. Output goes to stdout, messages to stderr.
@@ -167,8 +167,8 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 	}
 
 	switch cmd {
-	case "setup": // reached only without a terminal; main runs it otherwise
-		return fail(exitArgs, "setup needs a terminal; use set KEY=VALUE in scripts")
+	case "ask": // reached only without a terminal; main runs it otherwise
+		return fail(exitArgs, "ask needs a terminal; use set KEY=VALUE in scripts")
 
 	case "get":
 		if len(args) == 0 {
@@ -245,12 +245,12 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		}
 		return exitOK
 
-	case "describe":
+	case "explain":
 		if schema == nil {
 			return needSchema()
 		}
 		if len(args) == 0 {
-			for _, l := range schema.DescribeAll(ini) {
+			for _, l := range schema.ExplainAll(ini) {
 				fmt.Fprintln(stdout, l)
 			}
 			return exitOK
@@ -258,7 +258,7 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		var blocks [][]string
 		var unknown []string
 		for _, p := range args {
-			if lines, ok := schema.DescribeName(ini, p); ok {
+			if lines, ok := schema.ExplainName(ini, p); ok {
 				blocks = append(blocks, lines)
 			} else {
 				unknown = append(unknown, p)
@@ -277,9 +277,9 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		}
 		return exitOK
 
-	case "dump":
+	case "emit":
 		if len(args) > 1 {
-			return fail(exitArgs, "usage: dump [SECTION]")
+			return fail(exitArgs, "usage: emit [SECTION]")
 		}
 		out, ok, err := view.JSON(firstOr(args, ""))
 		if !ok {

@@ -16,8 +16,8 @@ package main
 import "strings"
 
 var commands = []string{
-	"set", "get", "unset", "wipe", "copy", "move", "keys", "sections", "list", "dump",
-	"check", "describe", "setup", "status", "changes", "path", "save", "revert", "history", "delim", "version", "help", "quit",
+	"set", "get", "unset", "wipe", "copy", "move", "keys", "sections", "list", "emit",
+	"check", "explain", "ask", "status", "changes", "path", "save", "revert", "history", "delim", "version", "help", "quit",
 }
 
 func (r *Repl) complete(line string, pos int) (head string, cands []string, tail string) {
@@ -37,7 +37,7 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 		settled, cands = keyPaths(r.view(), word, " ") // keys with a value, defaults included
 		head += settled
 
-	case "describe":
+	case "explain":
 		var settled string
 		settled, cands = keyPaths(r.knownKeys(), word, " ") // every key the schema defines
 		head += settled
@@ -95,7 +95,7 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 			head += settled
 		}
 
-	case "keys", "list", "dump":
+	case "keys", "list", "emit":
 		if len(args) == 1 {
 			cands = sectionNames(r.view(), word, "")
 		}
@@ -105,7 +105,7 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 			cands = sectionNames(r.ini, word, "")
 		}
 
-	case "setup":
+	case "ask":
 		if len(args) == 1 {
 			cands = sectionNames(r.knownKeys(), word, "")
 		}

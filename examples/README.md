@@ -8,9 +8,9 @@ it automatically. Run these from inside the folder. On Windows, `echo
 
     ezconfig list                          defaults filled in where config.ini is silent
     ezconfig get display.width player.debug    1920 and false: a default, and "no" in its standard spelling
-    ezconfig describe                      every key the schema knows, section by section
-    ezconfig describe player               one section; site comes first, as keys= says
-    ezconfig describe display.rotation     type, allowed values, default and current value
+    ezconfig explain                      every key the schema knows, section by section
+    ezconfig explain player               one section; site comes first, as keys= says
+    ezconfig explain display.rotation     type, allowed values, default and current value
     ezconfig check                         no output, exit 0: config.ini is valid
     ezconfig -c broken.ini check           eight problems, exit 1
     ezconfig -c broken.ini list            only valid values: defaults replace the bad ones, warnings on stderr
@@ -21,10 +21,10 @@ it automatically. Run these from inside the folder. On Windows, `echo
 
 Then open the shell with `ezconfig` and try:
 
-- `setup`: asks for each player, schedule and display value in the order
-  `[@setup] sections=` gives, then shows the changes and asks whether to
+- `ask`: asks for each player, schedule and display value in the order
+  `[@ask] sections=` gives, then shows the changes and asks whether to
   save; Enter keeps a value (but not a missing site), Ctrl+C stops
-- `setup schedule`, then the up arrow at a question: recalls the current
+- `ask schedule`, then the up arrow at a question: recalls the current
   value and the default for editing
 - `set schedule.on` (no `=`): asks for the time, says what format it needs,
   and asks again after an answer like 7am; Enter alone keeps the value
@@ -35,19 +35,19 @@ Then open the shell with `ezconfig` and try:
 - `set display.background=r` then Tab: completes to red
 - `get net.` then Tab: offers net.port even though config.ini never sets it
 - `unset display.rotation`: reports that the default (0) now applies
-- `describe player.site`, then `check`
+- `explain player.site`, then `check`
 
 ## backup
 
-Root keys (retries, verify) are described by `[@section .]`. Its `[@setup]`
-has no `sections=`, so `setup` walks every section with rules, root first.
+Root keys (retries, verify) are described by `[@section .]`. Its `[@ask]`
+has no `sections=`, so `ask` walks every section with rules, root first.
 
     ezconfig list                          mode shows as incremental, verify as true
     ezconfig get retries verify            root keys with defaults: 3 and true
     ezconfig set backup.mode=weekly        refused: not one of mirror, incremental, full
     ezconfig unset backup.source           allowed, but then `ezconfig check` reports it as required
-    ezconfig describe .                    the root keys
-    ezconfig setup                         asks for each value, then whether to save; exit 0, or 6 if stopped
+    ezconfig explain .                    the root keys
+    ezconfig ask                           asks for each value, then whether to save; exit 0, or 6 if stopped
 
 ## types
 
@@ -56,7 +56,7 @@ zones, window geometry, host names, IPv4 addresses, URLs, email addresses,
 durations, sizes, UUIDs, version numbers and locales. Each pattern has a
 `format`, so people see words instead of the regular expression.
 
-    ezconfig describe                      every rule, with its format
+    ezconfig explain                      every rule, with its format
     ezconfig check                         event.date 2026-02-30 passes: a pattern can't count days in a month
     ezconfig set event.open=19:30          refused: needs am or pm
     ezconfig set job.cache=512MB           accepted
