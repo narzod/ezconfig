@@ -52,7 +52,12 @@ Run `ezconfig help` (or `help` inside the shell) for the full command list.
 
     go mod tidy
     go build                                # this platform
-    GOOS=windows GOARCH=amd64 go build      # Windows
+    GOOS=windows GOARCH=amd64 go build -trimpath    # Windows
     GOOS=linux GOARCH=arm64 go build        # Android (Termux)
+
+Windows builds include version details and a manifest from
+`rsrc_windows_amd64.syso`; see `winres/` to rebuild it. Leave the symbols
+in (no `-ldflags "-s -w"`): stripped, unsigned Go programs are flagged by
+antivirus heuristics more often.
 
 Earlier versions were called inirepl; tag v0.8.0 is the last of those.
