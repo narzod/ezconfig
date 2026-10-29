@@ -14,7 +14,7 @@ import (
 func run(t *testing.T, path, delim, cmd string, args ...string) (int, string, string) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	code := oneShot(path, delim, cmd, args, &out, &errOut)
+	code := oneShot(path, delim, "", cmd, args, &out, &errOut)
 	return code, out.String(), errOut.String()
 }
 

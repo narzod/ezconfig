@@ -29,11 +29,11 @@ func TestComplete(t *testing.T) {
 		line string
 		want []string
 	}{
-		{"", []string{"changes ", "copy ", "delim ", "dump ", "get ", "help ", "history ", "keys ", "list ", "move ", "path ", "quit ",
+		{"", []string{"changes ", "check ", "copy ", "delim ", "describe ", "dump ", "get ", "help ", "history ", "keys ", "list ", "move ", "path ", "quit ",
 			"revert ", "save ", "sections ", "set ", "status ", "unset ", "version ", "wipe "}},
 		{"se", []string{"sections ", "set "}},
 		{"delim ", []string{"/", ":", "|"}},
-		{"d", []string{"delim ", "dump "}},
+		{"d", []string{"delim ", "describe ", "dump "}},
 		{"du", []string{"dump "}},
 		{"w", []string{"wipe "}},
 		{"h", []string{"help ", "history "}},
@@ -63,11 +63,12 @@ func TestComplete(t *testing.T) {
 		{"list net ", nil},
 		{"dump ", []string{".", "display", "net"}},
 		{"l", []string{"list "}},
-		{"c", []string{"changes ", "copy "}},
+		{"c", []string{"changes ", "check ", "copy "}},
 		{"m", []string{"move "}},
 		{"move ", []string{". ", "display ", "net "}},
 		{"move net ", nil},
-		{"ch", []string{"changes "}},
+		{"ch", []string{"changes ", "check "}},
+		{"cha", []string{"changes "}},
 		{"changes ", []string{".", "display", "net"}},
 		{"j", nil},
 		{"status ", nil},

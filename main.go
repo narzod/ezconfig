@@ -4,7 +4,7 @@ package main
 // in memory, with tab completion of commands, sections and keys, plus a
 // one-shot mode for scripts and other programs (see oneshot.go).
 //
-// usage: ezconfig [-c FILE] [-d CHAR] [COMMAND [ARGS...]]
+// usage: ezconfig [-c FILE] [-s FILE] [-d CHAR] [COMMAND [ARGS...]]
 
 import (
 	"errors"
@@ -32,6 +32,8 @@ keys [SECTION]     list key names for everything, or for SECTION
 sections           list section names
 list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 dump [SECTION]     print everything, or SECTION, as JSON
+check              report values that break the schema
+describe KEY...    show what the schema says about keys
 status             show file details and session settings
 changes [SECTION]  show unsaved changes
 path               show the config's full path
@@ -65,11 +67,12 @@ func statFile(path string) diskState {
 }
 
 type Repl struct {
-	ini   *Ini
-	path  string // absolute path of the loaded file
-	disk  diskState
-	saved *Ini // the config as loaded or last saved; unsaved changes are the difference
-	ln    *liner.State
+	ini    *Ini
+	path   string // absolute path of the loaded file
+	disk   diskState
+	saved  *Ini    // the config as loaded or last saved; unsaved changes are the difference
+	schema *Schema // nil without a schema
+	ln     *liner.State
 
 	interactive bool     // stdin is a terminal; only then is history recorded
 	session     []string // commands typed this session (for `history on`)
@@ -81,6 +84,7 @@ type cmdLine struct {
 	path     string   // -c FILE (default config.ini)
 	delim    string   // -d CHAR (default ".")
 	delimSet bool     // -d was given
+	schema   string   // -s FILE, "none", or "" for schema.ini next to the config
 	cmd      string   // one-shot command, "" for the shell
 	args     []string // the command's arguments
 	early    string   // "help" or "version" from --help / --version
@@ -110,6 +114,10 @@ func parseArgs(argv []string) (cmdLine, error) {
 			cl.path, err = value(&i, a)
 		case strings.HasPrefix(a, "--config="):
 			cl.path = strings.TrimPrefix(a, "--config=")
+		case a == "-s" || a == "--schema":
+			cl.schema, err = value(&i, a)
+		case strings.HasPrefix(a, "--schema="):
+			cl.schema = strings.TrimPrefix(a, "--schema=")
 		case a == "-d" || a == "--delim":
 			cl.delim, err = value(&i, a)
 			cl.delimSet = true
@@ -138,7 +146,7 @@ func main() {
 		die(exitArgs, "%v (try ezconfig help)", err)
 	}
 	if cl.early != "" {
-		os.Exit(oneShot("", ".", cl.early, nil, os.Stdout, os.Stderr))
+		os.Exit(oneShot("", ".", "", cl.early, nil, os.Stdout, os.Stderr))
 	}
 	if err := checkDelim(cl.delim); err != nil {
 		die(exitArgs, "-d: %v", err)
@@ -152,7 +160,7 @@ func main() {
 		if abs, err := filepath.Abs(path); err == nil {
 			path = abs
 		}
-		os.Exit(oneShot(path, cl.delim, cl.cmd, cl.args, os.Stdout, os.Stderr))
+		os.Exit(oneShot(path, cl.delim, cl.schema, cl.cmd, cl.args, os.Stdout, os.Stderr))
 	}
 	if cl.delimSet {
 		die(exitArgs, "-d applies to one-shot commands; in the shell, use the delim command")
@@ -171,7 +179,22 @@ func main() {
 		}
 		die(exitFile, "%s: %v", path, err)
 	}
-	r := &Repl{ini: ini, saved: ini.Clone(), path: path, disk: statFile(path), interactive: isTerminal(os.Stdin)}
+	schemaPath, err := findSchema(path, cl.schema)
+	if err != nil {
+		die(exitFile, "%v", err)
+	}
+	var schema *Schema
+	if schemaPath != "" {
+		if schema, err = LoadSchema(schemaPath); err != nil {
+			var se *SchemaError
+			if errors.As(err, &se) {
+				die(exitSyntax, "%s: %v", schemaPath, err)
+			}
+			die(exitFile, "%s: %v", schemaPath, err)
+		}
+	}
+	r := &Repl{ini: ini, saved: ini.Clone(), schema: schema, path: path, disk: statFile(path),
+		interactive: isTerminal(os.Stdin)}
 
 	if r.disk.exists {
 		total, _ := ini.KeyCount()
@@ -179,6 +202,12 @@ func main() {
 			plural(len(ini.Sections()), "section"), plural(total, "key"))
 	} else {
 		fmt.Printf("new file: %s (created on save)\n", path)
+	}
+	if schema != nil {
+		fmt.Printf("schema: %s (%s)\n", schemaLabel(schemaPath, path), plural(schema.Rules(), "rule"))
+		if p := schema.Problems(ini); len(p) > 0 {
+			fmt.Printf("note: %s; type check for details\n", count(len(p), "value breaks the schema", "values break the schema"))
+		}
 	}
 
 	r.ln = liner.NewLiner()
@@ -228,7 +257,16 @@ func (r *Repl) exec(line string) bool {
 			errorf("usage: set KEY=VALUE")
 			break
 		}
-		if err := r.ini.Set(path, strings.TrimSpace(value)); err != nil {
+		value = strings.TrimSpace(value)
+		if rl := r.schema.ruleFor(r.ini.splitPath(path)); rl != nil {
+			v, err := rl.check(value)
+			if err != nil {
+				errorf("%s: %v", path, err)
+				break
+			}
+			value = v
+		}
+		if err := r.ini.Set(path, value); err != nil {
 			errorf("%v", err)
 		}
 
@@ -237,8 +275,9 @@ func (r *Repl) exec(line string) bool {
 			errorf("usage: get KEY...")
 			break
 		}
+		view := r.view()
 		for _, p := range args {
-			if v, ok := r.ini.Get(p); ok {
+			if v, ok := view.Get(p); ok {
 				fmt.Println(v)
 			} else {
 				errorf("not found: %s", p)
@@ -251,7 +290,15 @@ func (r *Repl) exec(line string) bool {
 			break
 		}
 		for _, p := range args {
-			if !r.ini.Unset(p) {
+			_, hasDef := r.schema.defaultFor(r.ini.splitPath(p))
+			removed := r.ini.Unset(p)
+			def, _ := r.view().Get(p) // the default, in its standard spelling
+			switch {
+			case removed && hasDef:
+				fmt.Printf("%s now uses the default (%s)\n", p, def)
+			case hasDef:
+				errorf("%s isn't set in the config; it already uses the default (%s)", p, def)
+			case !removed:
 				errorf("not found: %s", p)
 			}
 		}
@@ -330,7 +377,7 @@ func (r *Repl) exec(line string) bool {
 			errorf("usage: keys [SECTION]")
 			break
 		}
-		keys, ok := r.ini.KeyPaths(firstOr(args, ""))
+		keys, ok := r.view().KeyPaths(firstOr(args, ""))
 		if !ok {
 			errorf("no such section: %s", args[0])
 			break
@@ -338,14 +385,14 @@ func (r *Repl) exec(line string) bool {
 		printLines(keys)
 
 	case "sections":
-		printLines(r.ini.Sections())
+		printLines(r.view().Sections())
 
 	case "list":
 		if len(args) > 1 {
 			errorf("usage: list [SECTION]")
 			break
 		}
-		lines, ok := r.ini.List(firstOr(args, ""))
+		lines, ok := r.view().List(firstOr(args, ""))
 		if !ok {
 			errorf("no such section: %s", args[0])
 			break
@@ -357,7 +404,7 @@ func (r *Repl) exec(line string) bool {
 			errorf("usage: dump [SECTION]")
 			break
 		}
-		out, ok, err := r.ini.JSON(firstOr(args, ""))
+		out, ok, err := r.view().JSON(firstOr(args, ""))
 		if !ok {
 			errorf("no such section: %s", args[0])
 			break
@@ -367,6 +414,42 @@ func (r *Repl) exec(line string) bool {
 			break
 		}
 		fmt.Print(out)
+
+	case "check":
+		if len(args) > 0 {
+			errorf("usage: check")
+			break
+		}
+		if r.schema == nil {
+			errorf("no schema (put %s next to the config, or start with -s FILE)", schemaName)
+			break
+		}
+		problems := r.schema.Problems(r.ini)
+		printLines(problems)
+		if len(problems) == 0 {
+			fmt.Println("no problems found")
+		}
+
+	case "describe":
+		if len(args) == 0 {
+			errorf("usage: describe KEY...")
+			break
+		}
+		if r.schema == nil {
+			errorf("no schema (put %s next to the config, or start with -s FILE)", schemaName)
+			break
+		}
+		for i, p := range args {
+			lines, ok := r.schema.Describe(r.ini, p)
+			if !ok {
+				errorf("not found: %s", p)
+				continue
+			}
+			if i > 0 {
+				fmt.Println()
+			}
+			printLines(lines)
+		}
 
 	case "status":
 		r.status()
@@ -498,6 +581,11 @@ func (r *Repl) status() {
 	total, root := r.ini.KeyCount()
 	fmt.Println("sections:", len(r.ini.Sections()))
 	fmt.Printf("keys: %d (%d root)\n", total, root)
+	if r.schema != nil {
+		fmt.Printf("schema: %s (%s)\n", r.schema.path, plural(r.schema.Rules(), "rule"))
+	} else {
+		fmt.Println("schema: none")
+	}
 	switch {
 	case !r.historyOn():
 		fmt.Println("delimiter:", r.ini.delim, "(this session only)")
@@ -588,4 +676,10 @@ func die(code int, format string, a ...any) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// view is what applications would see if the session were saved: the
+// config with the schema's defaults and standard spellings applied.
+func (r *Repl) view() *Ini {
+	return r.schema.Effective(r.ini)
 }

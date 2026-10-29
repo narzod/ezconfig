@@ -9,6 +9,12 @@ the single source of truth for a config.
 - `ezconfig -c config.ini COMMAND ...` runs one command for scripts and other
   programs: `get`, `set`, `unset`, `keys`, `sections`, `list`, `dump`.
 
+An optional schema (`schema.ini` next to the config, or `-s FILE`) supplies
+defaults and rules: types string, int, float, bool and enum, with min, max,
+values, pattern and required. With a schema, reading commands show defaults
+for keys the config doesn't set, `set` refuses values that break a rule,
+`check` reports problems and `describe KEY` explains a key. See `examples/`.
+
 Run `ezconfig help` (or `help` inside the shell) for the full command list.
 
 ## Building

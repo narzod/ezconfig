@@ -2,10 +2,12 @@ package main
 
 // oneshot.go - run a single command from the command line and exit.
 //
-//	ezconfig [-c FILE] [-d CHAR] COMMAND [ARGS...]
+//	ezconfig [-c FILE] [-s FILE] [-d CHAR] COMMAND [ARGS...]
 //
 // One-shot mode offers every command that reads, plus set and unset:
-// get, keys, sections, list, dump, set, unset (and help, version).
+// get, keys, sections, list, dump, check, describe, set, unset (and help,
+// version). With a schema, reading commands see the effective config
+// (defaults filled in) and set refuses values that break it.
 // Everything else stays in the interactive shell.
 //
 // stdout carries only data; messages go to stderr. Writes are
@@ -22,8 +24,9 @@ import (
 // Exit codes, shared with validini's table.
 const (
 	exitOK       = 0
-	exitSyntax   = 2 // INI syntax error in the config
-	exitFile     = 3 // config unreadable (or unwritable)
+	exitInvalid  = 1 // a value breaks the schema
+	exitSyntax   = 2 // INI syntax error in the config or schema
+	exitFile     = 3 // config or schema unreadable (or config unwritable)
 	exitArgs     = 4 // bad arguments
 	exitNotFound = 5 // key or section not found
 )
@@ -33,7 +36,7 @@ const (
 var (
 	oneShotCommands = map[string]bool{
 		"get": true, "keys": true, "sections": true, "list": true, "dump": true,
-		"set": true, "unset": true, "help": true, "version": true,
+		"check": true, "describe": true, "set": true, "unset": true, "help": true, "version": true,
 	}
 	shellOnly = map[string]bool{
 		"wipe": true, "copy": true, "move": true, "status": true, "save": true, "revert": true,
@@ -41,7 +44,7 @@ var (
 	}
 )
 
-const usage = `usage: ezconfig [-c FILE] [-d CHAR] [COMMAND [ARGS...]]
+const usage = `usage: ezconfig [-c FILE] [-s FILE] [-d CHAR] [COMMAND [ARGS...]]
 
 Without a command, starts the interactive shell.
 
@@ -53,23 +56,27 @@ keys [SECTION]     list key names for everything, or for SECTION
 sections           list section names
 list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 dump [SECTION]     print everything, or SECTION, as JSON
+check              report values that break the schema
+describe KEY...    show what the schema says about keys
 help               show this text
 version            show the program version
 
 options:
 -c FILE            config to use (default: config.ini)
+-s FILE            schema to use, or none (default: schema.ini next to the config)
 -d CHAR            delimiter between section and key (default: .)
 
 exit status:
 0  success
-2  syntax error in the config
-3  config missing or unreadable
+1  a value breaks the schema
+2  syntax error in the config or schema
+3  config or schema missing or unreadable
 4  bad arguments
 5  key or section not found`
 
 // oneShot runs cmd with args against the config at path and returns the
 // exit status. Output goes to stdout, messages to stderr.
-func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) int {
+func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr io.Writer) int {
 	fail := func(code int, format string, a ...any) int {
 		fmt.Fprintf(stderr, "ezconfig: "+format+"\n", a...)
 		return code
@@ -107,6 +114,26 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 		return fail(exitFile, "%s: %v", path, err)
 	}
 
+	// Load the schema, if there is one.
+	schemaPath, err := findSchema(path, schemaOpt)
+	if err != nil {
+		return fail(exitFile, "%v", err)
+	}
+	var schema *Schema
+	if schemaPath != "" {
+		if schema, err = LoadSchema(schemaPath); err != nil {
+			var se *SchemaError
+			if errors.As(err, &se) {
+				return fail(exitSyntax, "%s: %v", schemaPath, err)
+			}
+			return fail(exitFile, "%s: %v", schemaPath, err)
+		}
+	}
+	view := schema.Effective(ini) // what applications see
+	needSchema := func() int {
+		return fail(exitArgs, "no schema (put %s next to the config, or use -s FILE)", schemaName)
+	}
+
 	// notFound reports missing names, with a hint when the delimiter
 	// itself appears in names in this config.
 	notFound := func(names []string) int {
@@ -126,7 +153,7 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 		values := make([]string, 0, len(args))
 		var missingKeys []string
 		for _, p := range args {
-			if v, ok := ini.Get(p); ok {
+			if v, ok := view.Get(p); ok {
 				values = append(values, v)
 			} else {
 				missingKeys = append(missingKeys, p)
@@ -147,9 +174,9 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 		var lines []string
 		var ok bool
 		if cmd == "keys" {
-			lines, ok = ini.KeyPaths(firstOr(args, ""))
+			lines, ok = view.KeyPaths(firstOr(args, ""))
 		} else {
-			lines, ok = ini.List(firstOr(args, ""))
+			lines, ok = view.List(firstOr(args, ""))
 		}
 		if !ok {
 			return notFound(args)
@@ -163,8 +190,53 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 		if len(args) > 0 {
 			return fail(exitArgs, "usage: sections")
 		}
-		for _, s := range ini.Sections() {
+		for _, s := range view.Sections() {
 			fmt.Fprintln(stdout, s)
+		}
+		return exitOK
+
+	case "check":
+		if len(args) > 0 {
+			return fail(exitArgs, "usage: check")
+		}
+		if schema == nil {
+			return needSchema()
+		}
+		problems := schema.Problems(ini)
+		for _, p := range problems {
+			fmt.Fprintln(stdout, p)
+		}
+		if len(problems) > 0 {
+			return exitInvalid
+		}
+		return exitOK
+
+	case "describe":
+		if len(args) == 0 {
+			return fail(exitArgs, "usage: describe KEY...")
+		}
+		if schema == nil {
+			return needSchema()
+		}
+		var blocks [][]string
+		var unknown []string
+		for _, p := range args {
+			if lines, ok := schema.Describe(ini, p); ok {
+				blocks = append(blocks, lines)
+			} else {
+				unknown = append(unknown, p)
+			}
+		}
+		if len(unknown) > 0 {
+			return notFound(unknown)
+		}
+		for i, b := range blocks {
+			if i > 0 {
+				fmt.Fprintln(stdout)
+			}
+			for _, l := range b {
+				fmt.Fprintln(stdout, l)
+			}
 		}
 		return exitOK
 
@@ -172,7 +244,7 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 		if len(args) > 1 {
 			return fail(exitArgs, "usage: dump [SECTION]")
 		}
-		out, ok, err := ini.JSON(firstOr(args, ""))
+		out, ok, err := view.JSON(firstOr(args, ""))
 		if !ok {
 			return notFound(args)
 		}
@@ -197,6 +269,13 @@ func oneShot(path, delim, cmd string, args []string, stdout, stderr io.Writer) i
 			}
 			if err := ini.CheckSet(p, v); err != nil {
 				return fail(exitArgs, "%v", err)
+			}
+			if r := schema.ruleFor(ini.splitPath(p)); r != nil {
+				std, err := r.check(v)
+				if err != nil {
+					return fail(exitInvalid, "%s: %v", p, err)
+				}
+				v = std
 			}
 			pairs = append(pairs, pair{p, v})
 		}
