@@ -2,25 +2,40 @@ package main
 
 // schema.go - an optional schema: defaults and rules for a config.
 //
-// A schema is itself an INI file with two parts. Ordinary sections and
-// root keys are defaults, shaped exactly like a config. Sections named
-// schema.<address> are rules, one per key:
+// A schema is itself an INI file. Ordinary sections and root keys are
+// defaults, shaped exactly like a config. Blocks whose names start with
+// "@" describe the config instead; the keyword says what kind, and after a
+// space comes the name it applies to (the same shape as Git's
+// [remote "origin"]):
 //
 //	[net]
 //	port=8080
 //
-//	[schema.net.port]
+//	[@section net]
+//	title=Network
+//	doc=How the player is reached
+//	keys=port
+//
+//	[@rule net.port]
 //	type=int
 //	min=1
 //	max=65535
+//	format=a number from 1 to 65535
 //	doc=Port the player listens on
+//	prompt=Which port should the player listen on?
 //
-// The address after "schema." is split at its first dot: schema.name is
-// the root key "name", schema.net.port is key "port" in section "net".
+// A rule's address is split at its first dot: [@rule name] is the root key
+// "name", [@rule net.port] is key "port" in section "net".
 //
 // Rule fields: type (string, int, float, bool, enum; default string),
 // min and max (int, float), values (enum; or a bool's own true,false
-// pair), pattern (string; must match the whole value), required, doc.
+// pair), pattern (string; must match the whole value), required, doc,
+// format (how to write the value, in words: shown instead of the pattern)
+// and prompt (the question set asks; doc otherwise).
+//
+// Section fields: title, doc, and keys (the order setup and describe use;
+// keys not listed follow in the order of their rules). [@section .] is the
+// root keys.
 //
 // Input is forgiving and output is standard: bools accept true/false,
 // yes/no and 1/0 in any case, enums match ignoring case, and both are
@@ -56,18 +71,30 @@ type rule struct {
 	patternText string
 	required    bool
 	doc         string
+	format      string // how to write the value, in words
+	prompt      string // the question set asks
 }
 
-// Schema holds the defaults and rules from a schema file.
+// sectionInfo is an [@section NAME] block: a title, a description, and an
+// explicit order for its keys.
+type sectionInfo struct {
+	name  string // "" for the root keys
+	title string
+	doc   string
+	keys  []string
+}
+
+// Schema holds the defaults, rules and section descriptions of a schema file.
 type Schema struct {
 	path     string
 	defaults *Ini
 	rules    []*rule
+	sections []*sectionInfo
 }
 
 var (
 	ruleFields = map[string]bool{"type": true, "min": true, "max": true, "values": true,
-		"pattern": true, "required": true, "doc": true}
+		"pattern": true, "required": true, "doc": true, "format": true, "prompt": true}
 	ruleTypes = map[string]bool{"string": true, "int": true, "float": true, "bool": true, "enum": true}
 )
 
@@ -87,16 +114,34 @@ func LoadSchema(path string) (*Schema, error) {
 	s := &Schema{path: path, defaults: NewIni()}
 	s.defaults.root.entries = append([]entry(nil), raw.root.entries...)
 	for _, sec := range raw.sections {
-		if !strings.HasPrefix(sec.name, "schema.") {
+		fail := func(err error) error { return &SchemaError{fmt.Sprintf("[%s]: %v", sec.name, err)} }
+		if !strings.HasPrefix(sec.name, "@") {
+			if looksLikeOldRule(sec) {
+				return nil, fail(fmt.Errorf("rules are now written [@rule %s]",
+					strings.TrimPrefix(sec.name, "schema.")))
+			}
 			s.defaults.sections = append(s.defaults.sections,
 				&section{name: sec.name, entries: append([]entry(nil), sec.entries...)})
 			continue
 		}
-		r, err := parseRule(sec)
-		if err != nil {
-			return nil, &SchemaError{fmt.Sprintf("[%s]: %v", sec.name, err)}
+		keyword, name, _ := strings.Cut(sec.name[1:], " ")
+		name = strings.TrimSpace(name)
+		switch strings.ToLower(keyword) {
+		case "rule":
+			r, err := parseRule(name, sec)
+			if err != nil {
+				return nil, fail(err)
+			}
+			s.rules = append(s.rules, r)
+		case "section":
+			si, err := parseSection(name, sec)
+			if err != nil {
+				return nil, fail(err)
+			}
+			s.sections = append(s.sections, si)
+		default:
+			return nil, fail(fmt.Errorf("unknown block @%s (blocks: @rule, @section)", keyword))
 		}
-		s.rules = append(s.rules, r)
 	}
 	// Defaults must follow their own rules.
 	for _, r := range s.rules {
@@ -107,22 +152,79 @@ func LoadSchema(path string) (*Schema, error) {
 			}
 		}
 	}
+	// A section's keys= may only name keys the schema knows.
+	for _, si := range s.sections {
+		for _, k := range si.keys {
+			_, hasDef := valueAt(s.defaults, si.name, k)
+			if s.ruleFor(si.name, k) == nil && !hasDef {
+				return nil, &SchemaError{fmt.Sprintf("[@section %s]: keys= names %s, which has no rule or default",
+					sectionLabelFor(si.name), k)}
+			}
+		}
+	}
 	return s, nil
 }
 
-func parseRule(sec *section) (*rule, error) {
-	addr := strings.TrimPrefix(sec.name, "schema.")
+// looksLikeOldRule spots a rule written in the old [schema.ADDRESS] form,
+// so it isn't quietly taken for a section of defaults.
+func looksLikeOldRule(sec *section) bool {
+	if !strings.HasPrefix(sec.name, "schema.") || len(sec.entries) == 0 {
+		return false
+	}
+	for _, e := range sec.entries {
+		if !ruleFields[e.key] {
+			return false
+		}
+	}
+	return true
+}
+
+func parseSection(name string, sec *section) (*sectionInfo, error) {
+	if name == "" {
+		return nil, fmt.Errorf("expected [@section NAME] (or [@section .] for the root keys)")
+	}
+	if name == "." {
+		name = ""
+	}
+	si := &sectionInfo{name: name}
+	for _, e := range sec.entries {
+		switch e.key {
+		case "title":
+			si.title = e.value
+		case "doc":
+			si.doc = e.value
+		case "keys":
+			for _, k := range strings.Split(e.value, ",") {
+				if k = strings.TrimSpace(k); k != "" {
+					si.keys = append(si.keys, k)
+				}
+			}
+		default:
+			return nil, fmt.Errorf("unknown field %q (fields: title, doc, keys)", e.key)
+		}
+	}
+	return si, nil
+}
+
+func sectionLabelFor(name string) string {
+	if name == "" {
+		return "."
+	}
+	return name
+}
+
+func parseRule(addr string, sec *section) (*rule, error) {
 	rsec, rkey, ok := strings.Cut(addr, ".")
 	if !ok {
 		rsec, rkey = "", addr
 	}
 	if rkey == "" || rsec == "" && ok {
-		return nil, fmt.Errorf("expected [schema.KEY] or [schema.SECTION.KEY]")
+		return nil, fmt.Errorf("expected [@rule KEY] or [@rule SECTION.KEY]")
 	}
 	r := &rule{sec: rsec, key: rkey, typ: "string"}
 	for _, e := range sec.entries {
 		if !ruleFields[e.key] {
-			return nil, fmt.Errorf("unknown field %q (fields: type, min, max, values, pattern, required, doc)", e.key)
+			return nil, fmt.Errorf("unknown field %q (fields: type, min, max, values, pattern, format, required, doc, prompt)", e.key)
 		}
 		switch e.key {
 		case "type":
@@ -151,6 +253,10 @@ func parseRule(sec *section) (*rule, error) {
 			r.required = b
 		case "doc":
 			r.doc = e.value
+		case "format":
+			r.format = e.value
+		case "prompt":
+			r.prompt = e.value
 		}
 	}
 	if !ruleTypes[r.typ] {
@@ -237,6 +343,9 @@ func (r *rule) check(v string) (string, error) {
 	switch r.typ {
 	case "string":
 		if r.pattern != nil && !r.pattern.MatchString(v) {
+			if r.format != "" {
+				return "", fmt.Errorf("%q isn't in the format: %s", v, r.format)
+			}
 			return "", fmt.Errorf("%q doesn't match the pattern %s", v, r.patternText)
 		}
 	case "int", "float":
@@ -318,7 +427,7 @@ func (r *rule) summary() string {
 		return r.typ
 	case "bool":
 		t, f := r.boolPair()
-		return fmt.Sprintf("bool, %s/%s (also accepts %s)", t, f, r.boolWords())
+		return fmt.Sprintf("bool, %s or %s (accepts %s, in any case)", t, f, r.boolWords())
 	}
 	return "enum, one of " + strings.Join(r.values, ", ")
 }
@@ -462,6 +571,9 @@ func (s *Schema) Describe(cfg *Ini, path string) (lines []string, ok bool) {
 	lines = append(lines, address(sec, key, cfg.delim))
 	if r != nil {
 		lines = append(lines, "type: "+r.summary())
+		if r.format != "" {
+			lines = append(lines, "format: "+r.format)
+		}
 		if r.required {
 			lines = append(lines, "required: yes")
 		}
@@ -586,4 +698,223 @@ func schemaLabel(schemaPath, configPath string) string {
 		return filepath.Base(schemaPath)
 	}
 	return schemaPath
+}
+
+// Known is the effective config plus every key the schema has a rule for,
+// even with no value or default yet: everything a person could set.
+func (s *Schema) Known(cfg *Ini) *Ini {
+	known := s.Effective(cfg)
+	if s == nil {
+		return known
+	}
+	known = known.Clone()
+	for _, r := range s.rules {
+		dst := &known.root
+		if r.sec != "" {
+			dst = known.ensureSection(r.sec)
+		}
+		if dst.find(r.key) < 0 {
+			dst.entries = append(dst.entries, entry{key: r.key})
+		}
+	}
+	return known
+}
+
+func (s *Schema) sectionInfo(name string) *sectionInfo {
+	if s == nil {
+		return nil
+	}
+	for _, si := range s.sections {
+		if si.name == name {
+			return si
+		}
+	}
+	return nil
+}
+
+// KeysIn lists a section's keys ("" for the root) in the order setup and
+// describe present them: the section's keys= list first, then keys with
+// rules in the order of the rules, then keys that only have defaults, then
+// keys only the config has.
+func (s *Schema) KeysIn(cfg *Ini, sec string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(k string) {
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	if si := s.sectionInfo(sec); si != nil {
+		for _, k := range si.keys {
+			add(k)
+		}
+	}
+	if s != nil {
+		for _, r := range s.rules {
+			if r.sec == sec {
+				add(r.key)
+			}
+		}
+		if keys, ok := s.defaults.Keys(orRoot(sec, s.defaults.delim)); ok {
+			for _, k := range keys {
+				add(k)
+			}
+		}
+	}
+	if keys, ok := cfg.Keys(orRoot(sec, cfg.delim)); ok {
+		for _, k := range keys {
+			add(k)
+		}
+	}
+	return out
+}
+
+// SectionsKnown lists sections ("" for the root, first, if it has keys) in
+// the order they appear among the rules, then section descriptions, then
+// defaults, then the config.
+func (s *Schema) SectionsKnown(cfg *Ini) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	if len(s.KeysIn(cfg, "")) > 0 {
+		add("")
+	}
+	if s != nil {
+		for _, r := range s.rules {
+			if r.sec != "" {
+				add(r.sec)
+			}
+		}
+		for _, si := range s.sections {
+			if si.name != "" {
+				add(si.name)
+			}
+		}
+		for _, name := range s.defaults.Sections() {
+			add(name)
+		}
+	}
+	for _, name := range cfg.Sections() {
+		add(name)
+	}
+	return out
+}
+
+// DescribeSection lists every known key of a section ("" for the root),
+// one line each, under the section's title and description if it has one.
+func (s *Schema) DescribeSection(cfg *Ini, sec string) []string {
+	var lines []string
+	if sec != "" || s.sectionInfo(sec) != nil {
+		head := "[" + sectionLabelFor(sec) + "]"
+		if si := s.sectionInfo(sec); si != nil {
+			switch {
+			case si.title != "" && si.doc != "":
+				head += " " + si.title + ": " + si.doc
+			case si.title != "":
+				head += " " + si.title
+			case si.doc != "":
+				head += " " + si.doc
+			}
+		}
+		lines = append(lines, head)
+	}
+	for _, k := range s.KeysIn(cfg, sec) {
+		addr := address(sec, k, cfg.delim)
+		r := s.ruleFor(sec, k)
+		if r == nil {
+			lines = append(lines, addr+" - no rule")
+			continue
+		}
+		detail := r.Hint()
+		if r.required {
+			detail = "required, " + detail
+		}
+		if r.doc != "" {
+			lines = append(lines, fmt.Sprintf("%s: %s - %s", addr, r.doc, detail))
+		} else {
+			lines = append(lines, fmt.Sprintf("%s - %s", addr, detail))
+		}
+	}
+	return lines
+}
+
+// DescribeAll describes every known section, with a blank line between.
+func (s *Schema) DescribeAll(cfg *Ini) []string {
+	var lines []string
+	for i, sec := range s.SectionsKnown(cfg) {
+		if i > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, s.DescribeSection(cfg, sec)...)
+	}
+	return lines
+}
+
+// DescribeName describes NAME the way the describe command reads it: a
+// key when it contains the delimiter, the root keys when it is the
+// delimiter, a whole section when it names one, and otherwise a root key.
+func (s *Schema) DescribeName(cfg *Ini, name string) ([]string, bool) {
+	switch {
+	case name == cfg.delim:
+		return s.DescribeSection(cfg, ""), true
+	case !strings.Contains(name, cfg.delim) && s.isSection(cfg, name):
+		return s.DescribeSection(cfg, name), true
+	}
+	return s.Describe(cfg, name)
+}
+
+func (s *Schema) isSection(cfg *Ini, name string) bool {
+	for _, sec := range s.SectionsKnown(cfg) {
+		if sec == name && sec != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// Hint says in words what a value should look like: the rule's format,
+// or a phrasing of its type.
+func (r *rule) Hint() string {
+	if r.format != "" {
+		return r.format
+	}
+	switch r.typ {
+	case "enum":
+		return "one of " + strings.Join(r.values, ", ")
+	case "bool":
+		t, f := r.boolPair()
+		return t + " or " + f
+	case "string":
+		if r.pattern != nil {
+			return "text matching " + r.patternText
+		}
+		return "text"
+	}
+	kind := "a whole number"
+	if r.typ == "float" {
+		kind = "a number"
+	}
+	switch {
+	case r.min != "" && r.max != "":
+		return fmt.Sprintf("%s from %s to %s", kind, r.min, r.max)
+	case r.min != "":
+		return fmt.Sprintf("%s, at least %s", kind, r.min)
+	case r.max != "":
+		return fmt.Sprintf("%s, at most %s", kind, r.max)
+	}
+	return kind
+}
+
+// orRoot turns "" (the root) into the delimiter, which Keys expects.
+func orRoot(sec, delim string) string {
+	if sec == "" {
+		return delim
+	}
+	return sec
 }

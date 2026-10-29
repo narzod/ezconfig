@@ -21,39 +21,39 @@ background=Black
 [net]
 port=8080
 
-[schema.player.name]
+[@rule player.name]
 pattern=[a-z0-9-]+
 doc=Name shown in the console
 
-[schema.player.site]
+[@rule player.site]
 required=true
 
-[schema.player.debug]
+[@rule player.debug]
 type=bool
 
-[schema.player.autostart]
+[@rule player.autostart]
 type=bool
 values=on,off
 
-[schema.display.width]
+[@rule display.width]
 type=int
 min=320
 max=7680
 
-[schema.display.rotation]
+[@rule display.rotation]
 type=enum
 values=0,90,180,270
 
-[schema.display.background]
+[@rule display.background]
 type=enum
 values=black,white,red,green,blue,yellow
 
-[schema.display.scale]
+[@rule display.scale]
 type=float
 min=0.5
 max=2
 
-[schema.net.port]
+[@rule net.port]
 type=int
 min=1
 max=65535
@@ -189,18 +189,22 @@ func TestDescribe(t *testing.T) {
 
 func TestSchemaErrors(t *testing.T) {
 	cases := map[string]string{
-		"[schema.a]\ntype=prot\n":                    "unknown type",
-		"[schema.a]\ntype=int\nmin=x\n":              "not a whole number",
-		"[schema.a]\ntype=int\nmin=5\nmax=1\n":       "above max",
-		"[schema.a]\ntype=enum\n":                    "needs values",
-		"[schema.a]\ntype=bool\nvalues=on\n":         "pair",
-		"[schema.a]\nmax=3\n":                        "doesn't apply",
-		"[schema.a]\ncolour=red\n":                   "unknown field",
-		"[schema.a]\npattern=(\n":                    "pattern",
-		"[schema.a]\nrequired=maybe\n":               "required",
-		"a=45\n[schema.a]\ntype=enum\nvalues=0,90\n": "breaks its own rule",
-		"[schema.]\ntype=int\n":                      "expected",
-		"[schema.a]\ntype=int\n[broken\n":            "unterminated",
+		"[@rule a]\ntype=prot\n":                                       "unknown type",
+		"[@rule a]\ntype=int\nmin=x\n":                                 "not a whole number",
+		"[@rule a]\ntype=int\nmin=5\nmax=1\n":                          "above max",
+		"[@rule a]\ntype=enum\n":                                       "needs values",
+		"[@rule a]\ntype=bool\nvalues=on\n":                            "pair",
+		"[@rule a]\nmax=3\n":                                           "doesn't apply",
+		"[@rule a]\ncolour=red\n":                                      "unknown field",
+		"[schema.a]\ntype=int\n":                                       "now written [@rule a]",
+		"[@widget a]\nx=1\n":                                           "unknown block @widget",
+		"[@section net]\ncolour=red\n":                                 "unknown field",
+		"[@rule net.port]\ntype=int\n[@section net]\nkeys=port,nope\n": "nope, which has no rule",
+		"[@rule a]\npattern=(\n":                                       "pattern",
+		"[@rule a]\nrequired=maybe\n":                                  "required",
+		"a=45\n[@rule a]\ntype=enum\nvalues=0,90\n":                    "breaks its own rule",
+		"[@rule ]\ntype=int\n":                                         "expected",
+		"[@rule a]\ntype=int\n[broken\n":                               "unterminated",
 	}
 	for src, want := range cases {
 		_, err := LoadSchema(writeFile(t, t.TempDir(), "schema.ini", src))
@@ -261,7 +265,7 @@ func TestOneShotSchema(t *testing.T) {
 	if code, out, _ := run(t, cfg, ".", "describe", "net.port"); code != 0 || !strings.HasPrefix(out, "net.port\ntype: int") {
 		t.Errorf("describe: %d %q", code, out)
 	}
-	writeFile(t, dir, "schema.ini", "[schema.a]\ntype=prot\n")
+	writeFile(t, dir, "schema.ini", "[@rule a]\ntype=prot\n")
 	if code, _, _ := run(t, cfg, ".", "list"); code != 2 {
 		t.Errorf("broken schema: code %d, want 2", code)
 	}
@@ -279,9 +283,9 @@ func TestCompleteWithSchema(t *testing.T) {
 			"display.rotation=180", "display.rotation=270"}},
 		{"set display.background=r", []string{"display.background=red"}},
 		{"set player.autostart=", []string{"player.autostart=on", "player.autostart=off"}},
-		{"get net.", []string{"net.port "}},        // a schema default the config never sets
-		{"unset net.", nil},                        // only what the config sets
-		{"set player.n", []string{"player.name="}}, // config key
+		{"get net.", []string{"net.port "}},       // a schema default the config never sets
+		{"unset net.", nil},                       // only what the config sets
+		{"set player.n", []string{"player.name"}}, // config key; Enter asks, or type "="
 		{"describe display.ro", []string{"display.rotation "}},
 	}
 	for _, c := range cases {
@@ -294,8 +298,8 @@ func TestCompleteWithSchema(t *testing.T) {
 	// What liner lists is only what remains to choose.
 	for line, want := range map[string][]string{
 		"set display.rotation=":   {"0", "90", "180", "270"},
-		"set display.":            {"background=", "rotation=", "scale=", "width="}, // scale: a rule, no default
-		"set player.":             {"autostart=", "debug=", "name=", "site="},       // site: required, no default
+		"set display.":            {"background", "rotation", "scale", "width"}, // scale: a rule, no default
+		"set player.":             {"autostart", "debug", "name", "site"},       // site: required, no default
 		"set display.background=": {"black", "white", "red", "green", "blue", "yellow"},
 	} {
 		if _, cands, _ := r.complete(line, len(line)); !reflect.DeepEqual(cands, want) {

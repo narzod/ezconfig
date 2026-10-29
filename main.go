@@ -22,7 +22,7 @@ import (
 var version = "dev"
 
 const helpText = `commands:
-set KEY=VALUE      set a value
+set KEY[=VALUE]    set a value (asks for it when "=" is left out)
 get KEY...         print values
 unset KEY...       remove keys
 wipe SECTION...    remove sections (asks first)
@@ -33,7 +33,7 @@ sections           list section names
 list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 dump [SECTION]     print everything, or SECTION, as JSON
 check              report values that break the schema
-describe KEY...    show what the schema says about keys
+describe [NAME...] explain keys, or list a section's keys
 status             show file details and session settings
 changes [SECTION]  show unsaved changes
 path               show the config's full path
@@ -253,8 +253,12 @@ func (r *Repl) exec(line string) bool {
 	case "set":
 		path, value, ok := strings.Cut(rest, "=")
 		path = strings.TrimSpace(path)
+		if !ok && len(args) == 1 { // set KEY: ask for the value
+			r.askSet(path, r.readAnswer)
+			break
+		}
 		if !ok || path == "" {
-			errorf("usage: set KEY=VALUE")
+			errorf("usage: set KEY=VALUE, or set KEY to be asked")
 			break
 		}
 		value = strings.TrimSpace(value)
@@ -438,16 +442,16 @@ func (r *Repl) exec(line string) bool {
 		}
 
 	case "describe":
-		if len(args) == 0 {
-			errorf("usage: describe KEY...")
-			break
-		}
 		if r.schema == nil {
 			errorf("no schema (put %s next to the config, or start with -s FILE)", schemaName)
 			break
 		}
+		if len(args) == 0 {
+			printLines(r.schema.DescribeAll(r.ini))
+			break
+		}
 		for i, p := range args {
-			lines, ok := r.schema.Describe(r.ini, p)
+			lines, ok := r.schema.DescribeName(r.ini, p)
 			if !ok {
 				errorf("not found: %s", p)
 				continue
@@ -587,7 +591,12 @@ func (r *Repl) status() {
 	fmt.Println("writable:", yesNo(writable(r.path)))
 	total, root := r.ini.KeyCount()
 	fmt.Println("sections:", len(r.ini.Sections()))
-	fmt.Printf("keys: %d (%d root)\n", total, root)
+	if r.schema != nil {
+		inEffect, _ := r.view().KeyCount()
+		fmt.Printf("keys: %d set in the config (%d root), %d in effect\n", total, root, inEffect)
+	} else {
+		fmt.Printf("keys: %d (%d root)\n", total, root)
+	}
 	if r.schema != nil {
 		fmt.Printf("schema: %s (%s)\n", r.schema.path, plural(r.schema.Rules(), "rule"))
 	} else {

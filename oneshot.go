@@ -57,7 +57,7 @@ sections           list section names
 list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 dump [SECTION]     print everything, or SECTION, as JSON
 check              report values that break the schema
-describe KEY...    show what the schema says about keys
+describe [NAME...] explain keys, or list a section's keys
 help               show this text
 version            show the program version
 
@@ -240,16 +240,19 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		return exitOK
 
 	case "describe":
-		if len(args) == 0 {
-			return fail(exitArgs, "usage: describe KEY...")
-		}
 		if schema == nil {
 			return needSchema()
+		}
+		if len(args) == 0 {
+			for _, l := range schema.DescribeAll(ini) {
+				fmt.Fprintln(stdout, l)
+			}
+			return exitOK
 		}
 		var blocks [][]string
 		var unknown []string
 		for _, p := range args {
-			if lines, ok := schema.Describe(ini, p); ok {
+			if lines, ok := schema.DescribeName(ini, p); ok {
 				blocks = append(blocks, lines)
 			} else {
 				unknown = append(unknown, p)

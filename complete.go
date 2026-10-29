@@ -89,8 +89,9 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 				cands = []string{v}
 			}
 		} else {
+			// No "=" added: Enter then asks for the value, or type "=".
 			var settled string
-			settled, cands = keyPaths(r.knownKeys(), word, "=")
+			settled, cands = keyPaths(r.knownKeys(), word, "")
 			head += settled
 		}
 
@@ -146,23 +147,8 @@ func withPrefix(items []string, prefix, suffix string) []string {
 	return out
 }
 
-// knownKeys is the effective config plus every key the schema has a rule
-// for, even with no value or default yet, so set and describe can offer
-// keys like a required site code that nothing has set.
+// knownKeys is everything a person could set: the effective config plus
+// every key the schema has a rule for, even with no value or default yet.
 func (r *Repl) knownKeys() *Ini {
-	known := r.view()
-	if r.schema == nil {
-		return known
-	}
-	known = known.Clone()
-	for _, rl := range r.schema.rules {
-		dst := &known.root
-		if rl.sec != "" {
-			dst = known.ensureSection(rl.sec)
-		}
-		if dst.find(rl.key) < 0 {
-			dst.entries = append(dst.entries, entry{key: rl.key})
-		}
-	}
-	return known
+	return r.schema.Known(r.ini)
 }
