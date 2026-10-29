@@ -18,9 +18,6 @@ import (
 	"github.com/peterh/liner"
 )
 
-// version is set at build time: go build -ldflags "-X main.version=1.0.0"
-var version = "dev"
-
 const helpText = `commands:
 set KEY[=VALUE]    set a value (asks for it when "=" is left out)
 get KEY...         print values

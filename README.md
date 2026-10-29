@@ -78,6 +78,10 @@ Run `ezconfig help` (or `help` inside the shell) for the full command list.
     GOOS=windows GOARCH=amd64 go build -trimpath    # Windows
     GOOS=linux GOARCH=arm64 go build        # Android (Termux)
 
+The version is in `version.go`; a release updates it there and in
+`winres/` (then rebuilds the .syso). To stamp a test build differently:
+`go build -ldflags "-X main.version=0.22.1-test"`.
+
 Windows builds include version details and a manifest from
 `rsrc_windows_amd64.syso`; see `winres/` to rebuild it. Leave the symbols
 in (no `-ldflags "-s -w"`): stripped, unsigned Go programs are flagged by
