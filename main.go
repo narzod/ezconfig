@@ -34,7 +34,7 @@ list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 emit [SECTION]     print everything, or SECTION, as JSON for programs
 check              report values that break the schema
 explain [NAME...]  explain keys and sections, or everything
-ask [SECTION]      ask for each value in turn, then offer to save
+ask [SECTION]      ask for each value in turn, then save, edit or quit
 status             show file details and session settings
 changes [SECTION]  show unsaved changes
 path               show the config's full path
@@ -467,7 +467,7 @@ func (r *Repl) exec(line string) bool {
 		}
 
 	case "ask":
-		r.askAll(args, r.readAnswer, r.confirmAnswer, func() bool { return r.save("") }, false)
+		r.askAll(args, r.readAnswer, func() bool { return r.save("") }, false)
 
 	case "status":
 		r.status()

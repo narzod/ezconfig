@@ -22,8 +22,9 @@ it automatically. Run these from inside the folder. On Windows, `echo
 Then open the shell with `ezconfig` and try:
 
 - `ask`: asks for each player, schedule and display value in the order
-  `[@ask] sections=` gives, then shows the changes and asks whether to
-  save; Enter keeps a value (but not a missing site), Ctrl+C stops
+  `[@ask] sections=` gives, then shows the changes and asks: save, edit
+  an answer, or quit; Enter keeps a value (but not a missing site), and at
+  the end only s, e or q will do
 - `ask schedule`, then the up arrow at a question: recalls the current
   value and the default for editing
 - `set schedule.on` (no `=`): asks for the time, says what format it needs,
@@ -47,7 +48,7 @@ has no `sections=`, so `ask` walks every section with rules, root first.
     ezconfig set backup.mode=weekly        refused: not one of mirror, incremental, full
     ezconfig unset backup.source           allowed, but then `ezconfig check` reports it as required
     ezconfig explain .                    the root keys
-    ezconfig ask                           asks for each value, then whether to save; exit 0, or 6 if stopped
+    ezconfig ask                           asks for each value, then save, edit or quit; exit 0, or 6 if not saved
 
 ## types
 

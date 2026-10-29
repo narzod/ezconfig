@@ -59,7 +59,7 @@ list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 emit [SECTION]     print everything, or SECTION, as JSON for programs
 check              report values that break the schema
 explain [NAME...]  explain keys and sections, or everything
-ask [SECTION]      ask for each value, then offer to save (needs a terminal)
+ask [SECTION]      ask for each value, then save, edit or quit (needs a terminal)
 help               show this text
 version            show the program version
 
@@ -75,7 +75,7 @@ exit status:
 3  config or schema missing or unreadable
 4  bad arguments
 5  key or section not found
-6  ask stopped, or its changes not saved`
+6  ask stopped or quit; nothing saved`
 
 // oneShot runs cmd with args against the config at path and returns the
 // exit status. Output goes to stdout, messages to stderr.

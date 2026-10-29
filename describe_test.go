@@ -163,12 +163,14 @@ sections=app,.
 		t.Errorf("AskKeys: %q", got)
 	}
 
+	const review = "save, edit, or quit? [s/e/q] "
 	var asked []string
 	var recalled [][]string
 	answers := map[string][]string{
 		"app.locale> ": {""}, "app.mode> ": {"desktop"},
 		"app.retries> ": {"", "3"}, // required with no value: Enter is refused
 		"name> ":        {"front"},
+		review:          {"", "", "s"}, // extra Enter presses only ask again
 	}
 	read := func(p string, _, recall []string) (string, error) {
 		asked = append(asked, p)
@@ -177,21 +179,20 @@ sections=app,.
 		answers[p] = answers[p][1:]
 		return a, nil
 	}
-	var question string
 	saves := 0
-	yes := func(q string) bool { question = q; return true }
 	save := func() bool { saves++; return true }
-	if got := r.askAll(nil, read, yes, save, false); got != askDone {
+	if got := r.askAll(nil, read, save, false); got != askDone {
 		t.Errorf("ask: result %d", got)
 	}
-	if !reflect.DeepEqual(asked, []string{"app.locale> ", "app.mode> ", "app.retries> ", "app.retries> ", "name> "}) {
+	if !reflect.DeepEqual(asked, []string{"app.locale> ", "app.mode> ", "app.retries> ", "app.retries> ", "name> ",
+		review, review, review}) {
 		t.Errorf("asked: %q", asked)
 	}
 	if !reflect.DeepEqual(recalled[0], []string{"en-US"}) { // the default
 		t.Errorf("recall for app.locale: %q", recalled[0])
 	}
-	if question != "save 3 changes to config.ini?" || saves != 1 {
-		t.Errorf("save question %q, saves %d", question, saves)
+	if saves != 1 {
+		t.Errorf("saves %d", saves)
 	}
 	for path, want := range map[string]string{"app.mode": "desktop", "app.retries": "3", "name": "front"} {
 		if v, _ := ini.Get(path); v != want {
@@ -220,41 +221,70 @@ sections=app,.
 		asked = append(asked, p)
 		return "", errors.New("aborted")
 	}
-	if got := r.askAll([]string{"app"}, stop, yes, save, true); got != askStopped || len(asked) != 1 {
+	if got := r.askAll([]string{"app"}, stop, save, true); got != askStopped || len(asked) != 1 {
 		t.Errorf("one-shot cancel: result %d, asked %q", got, asked)
 	}
-	if got := r.askAll([]string{"app"}, stop, yes, save, false); got != askUnsaved {
+	if got := r.askAll([]string{"app"}, stop, save, false); got != askUnsaved {
 		t.Errorf("shell cancel: result %d", got)
 	}
 
-	// Earlier unsaved changes are counted in the save question.
-	r.saved = ini.Clone()
-	ini.Set("app.extra", "2")
-	r.askAll([]string{"app"}, func(p string, _, _ []string) (string, error) {
-		if p == "app.mode> " {
-			return "kiosk", nil
+	// script answers each prompt in turn from a list.
+	script := func(steps ...[2]string) reader {
+		return func(p string, _, _ []string) (string, error) {
+			for i, st := range steps {
+				if st[0] == p {
+					steps = append(steps[:i:i], steps[i+1:]...)
+					return st[1], nil
+				}
+			}
+			return "", nil // Enter
 		}
-		return "", nil
-	}, yes, func() bool { return true }, false)
-	if question != "save 2 changes to config.ini (1 made earlier)?" {
-		t.Errorf("save question with earlier changes: %q", question)
 	}
-	ini.Set("app.mode", "desktop")
 
-	// Declining the save: dropped in one-shot, kept in memory in the shell.
-	no := func(string) bool { return false }
-	change := func(p string, _, _ []string) (string, error) {
+	// Edit: change one answer from the review, then save.
+	ini.Set("app.mode", "desktop")
+	before := saves
+	got := r.askAll([]string{"app"}, script(
+		[2]string{"app.mode> ", "kiosk"},
+		[2]string{review, "e"},
+		[2]string{"edit which key? ", "app.mode"},
+		[2]string{"app.mode> ", "desktop"}, // back to where it was: no changes left
+	), save, false)
+	if got != askDone || saves != before {
+		t.Errorf("edit back to the old value: result %d, saves %d", got, saves-before)
+	}
+	got = r.askAll([]string{"app"}, script(
+		[2]string{"app.mode> ", "kiosk"},
+		[2]string{review, "edit"},
+		[2]string{"edit which key? ", "nope"},
+		[2]string{"edit which key? ", "app.retries"},
+		[2]string{"app.retries> ", "7"},
+		[2]string{review, "save"},
+	), save, false)
+	if v, _ := ini.Get("app.retries"); got != askDone || v != "7" || saves != before+1 {
+		t.Errorf("edit then save: result %d, retries %q", got, v)
+	}
+
+	// Quit: dropped in one-shot, kept unsaved in memory in the shell.
+	if got := r.askAll([]string{"app"}, script([2]string{"app.mode> ", "desktop"}, [2]string{review, "q"}), save, true); got != askStopped {
+		t.Errorf("one-shot quit: result %d", got)
+	}
+	ini.Set("app.mode", "kiosk") // a real one-shot run would have exited, dropping desktop
+	if got := r.askAll([]string{"app"}, script([2]string{"app.mode> ", "desktop"}, [2]string{review, "quit"}), save, false); got != askUnsaved || saves != before+1 {
+		t.Errorf("shell quit: result %d, saves %d", got, saves)
+	}
+	// Ctrl+C at the review is a stop, not a save.
+	ctrlC := func(p string, _, _ []string) (string, error) {
+		if p == review {
+			return "", errors.New("aborted")
+		}
 		if p == "app.mode> " {
 			return "kiosk", nil
 		}
 		return "", nil
 	}
-	if got := r.askAll([]string{"app"}, change, no, save, true); got != askStopped {
-		t.Errorf("one-shot decline: result %d", got)
-	}
-	ini.Set("app.mode", "desktop") // a real one-shot run would have exited, dropping kiosk
-	if got := r.askAll([]string{"app"}, change, no, save, false); got != askUnsaved || saves != 1 {
-		t.Errorf("shell decline: result %d, saves %d", got, saves)
+	if got := r.askAll([]string{"app"}, ctrlC, save, true); got != askStopped || saves != before+1 {
+		t.Errorf("Ctrl+C at the review: result %d", got)
 	}
 
 	// An invalid current value can't be kept with Enter during ask.

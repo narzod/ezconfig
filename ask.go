@@ -208,31 +208,24 @@ func (r *Repl) readAnswer(prompt string, choices, recall []string) (string, erro
 	return r.ln.Prompt(prompt)
 }
 
-// confirmAnswer asks a yes/no question at the end of ask, without the
-// shell's history on the up arrow; anything but y or yes means no.
-func (r *Repl) confirmAnswer(question string) bool {
-	a, err := r.readAnswer(question+" [y/N] ", []string{"yes", "no"}, nil)
-	a = strings.ToLower(strings.TrimSpace(a))
-	return err == nil && (a == "y" || a == "yes")
-}
-
-// askResult is how a ask run ended.
+// askResult is how an ask run ended.
 type askResult int
 
 const (
 	askDone       askResult = iota // saved, or nothing to change
 	askUnsaved                     // shell: answers kept in memory, not saved
-	askStopped                     // Ctrl+C, or no at the save question (one-shot)
+	askStopped                     // one-shot: Ctrl+C, or quit at the review
 	askRefused                     // no schema, bad arguments, or no terminal
 	askSaveFailed                  // the save itself failed
 )
 
-// ask asks about each key of the schema's sections, or of one section,
-// then shows the changes and asks whether to save them. save writes the
-// config and reports whether it worked; oneShot changes what declining
-// means: in the shell the answers stay unsaved in memory, otherwise they
-// are dropped.
-func (r *Repl) askAll(args []string, read reader, confirm func(string) bool, save func() bool, oneShot bool) askResult {
+// askAll asks about each key of the schema's sections, or of one
+// section, then shows the changes and asks whether to save, edit an
+// answer, or quit. That question has no default: Enter alone asks again,
+// so pressing Enter once too often can't lose or save anything. save
+// writes the config and reports whether it worked. In the shell, quitting
+// leaves the answers unsaved in memory; one-shot, it drops them.
+func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool) askResult {
 	switch {
 	case r.schema == nil:
 		errorf("no schema (put %s next to the config, or use -s FILE)", schemaName)
@@ -269,6 +262,7 @@ func (r *Repl) askAll(args []string, read reader, confirm func(string) bool, sav
 	fmt.Println("Enter keeps a value; Ctrl+C stops.")
 
 	before := r.ini.Clone()
+	var asked [][2]string // section, key: what edit can return to
 	stopped := false
 walk:
 	for _, sec := range sections {
@@ -276,6 +270,7 @@ walk:
 		fmt.Println(r.schema.SectionHeading(sec))
 		for _, key := range r.schema.AskKeys(r.ini, sec) {
 			fmt.Println()
+			asked = append(asked, [2]string{sec, key})
 			if r.ask(sec, key, read, askOpts{insist: true}) == askCancelled {
 				stopped = true
 				break walk
@@ -283,42 +278,95 @@ walk:
 		}
 	}
 
-	fmt.Println()
-	changes := diffIni(before, r.ini)
-	switch {
-	case stopped && oneShot:
-		fmt.Println("stopped; nothing saved")
-		return askStopped
-	case stopped:
-		if len(changes) > 0 {
-			fmt.Printf("stopped; %s unsaved (type changes to see them)\n", count(len(changes), "answer is", "answers are"))
-		} else {
-			fmt.Println("stopped")
-		}
-		return askUnsaved
-	case len(changes) == 0:
-		fmt.Println("done: no changes")
-		return askDone
+	quitWord := "quit without saving"
+	if !oneShot {
+		quitWord = "quit and keep the answers unsaved"
 	}
-	for _, c := range changes {
-		fmt.Println(c.line(r.ini.delim))
-	}
-	question := fmt.Sprintf("save %s to %s?", plural(len(changes), "change"), filepath.Base(r.path))
-	if total := r.unsaved(); total > len(changes) { // the shell had unsaved changes already
-		question = fmt.Sprintf("save %s to %s (%d made earlier)?",
-			plural(total, "change"), filepath.Base(r.path), total-len(changes))
-	}
-	if confirm(question) {
-		if save() {
+	for {
+		fmt.Println()
+		changes := diffIni(before, r.ini)
+		switch {
+		case stopped:
+			return r.askLeave(changes, oneShot, "stopped")
+		case len(changes) == 0:
+			fmt.Println("done: no changes")
 			return askDone
 		}
-		return askSaveFailed
+		for _, c := range changes {
+			fmt.Println(c.line(r.ini.delim))
+		}
+		if total := r.unsaved(); total > len(changes) { // the shell had unsaved changes already
+			fmt.Printf("(saving also writes %s made earlier)\n", plural(total-len(changes), "change"))
+		}
+		fmt.Printf("s: save to %s, e: edit an answer, q: %s\n", filepath.Base(r.path), quitWord)
+		choice := ""
+		for choice == "" {
+			a, err := read("save, edit, or quit? [s/e/q] ", []string{"save", "edit", "quit"}, nil)
+			if err != nil { // Ctrl+C here is a deliberate stop
+				fmt.Println()
+				return r.askLeave(changes, oneShot, "stopped")
+			}
+			switch strings.ToLower(strings.TrimSpace(a)) {
+			case "s", "save":
+				choice = "save"
+			case "e", "edit":
+				choice = "edit"
+			case "q", "quit":
+				choice = "quit"
+			default:
+				fmt.Println("type s to save, e to edit an answer, or q to quit")
+			}
+		}
+		switch choice {
+		case "save":
+			if save() {
+				return askDone
+			}
+			return askSaveFailed
+		case "quit":
+			return r.askLeave(changes, oneShot, "quit")
+		}
+		r.editAnswer(asked, read)
 	}
-	if oneShot {
-		fmt.Println("not saved")
+}
+
+// editAnswer asks which of the asked keys to change, then asks it again.
+// Enter alone, or Ctrl+C, goes back to the review.
+func (r *Repl) editAnswer(asked [][2]string, read reader) {
+	var addrs []string
+	for _, k := range asked {
+		addrs = append(addrs, address(k[0], k[1], r.ini.delim))
+	}
+	for {
+		a, err := read("edit which key? ", addrs, nil)
+		a = strings.TrimSpace(a)
+		if err != nil || a == "" {
+			return
+		}
+		for i, addr := range addrs {
+			if addr == a {
+				fmt.Println()
+				r.ask(asked[i][0], asked[i][1], read, askOpts{insist: true})
+				return
+			}
+		}
+		errorf("%s wasn't asked here; Tab lists the keys (Enter goes back)", a)
+	}
+}
+
+// askLeave ends an ask run without saving: one-shot drops the answers,
+// the shell keeps them unsaved in memory.
+func (r *Repl) askLeave(changes []change, oneShot bool, how string) askResult {
+	switch {
+	case oneShot:
+		fmt.Println(how + "; nothing saved")
 		return askStopped
+	case len(changes) > 0:
+		fmt.Printf("%s; %s unsaved (type changes to see them, save to keep them)\n",
+			how, count(len(changes), "answer is", "answers are"))
+	default:
+		fmt.Println(how)
 	}
-	fmt.Println("not saved; the answers stay in memory (type save, or revert)")
 	return askUnsaved
 }
 
@@ -375,7 +423,7 @@ func oneShotAsk(path, delim, schemaOpt string, args []string) int {
 		}
 		return true
 	}
-	switch r.askAll(args, r.readAnswer, r.confirmAnswer, save, true) {
+	switch r.askAll(args, r.readAnswer, save, true) {
 	case askStopped:
 		return exitCancelled
 	case askRefused:
