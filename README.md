@@ -45,6 +45,9 @@ Rules have a type (string, int, float, bool, enum) with min, max, values,
 pattern and required, plus `format` (how to write the value, in words, shown
 instead of the pattern), `doc` and `prompt`. Sections have `title`, `doc` and
 `keys` (the order to present them); `[@section .]` is the root keys.
+`ask` shows a rule's `prompt` (or its `doc`) with the format in
+parentheses, so write formats without parentheses of their own:
+`format=HH:MM, 24-hour, e.g. 07:30`.
 
 With a schema, reading commands show what applications should see: defaults
 for keys the config doesn't set, and only valid values (an invalid value is

@@ -61,20 +61,24 @@ func (r *Repl) askSet(path string, read reader) askOutcome {
 	return r.ask(sec, key, read, askOpts{remember: true})
 }
 
-// ask explains one key and asks for its value.
+// ask explains one key and asks for its value. The question (the rule's
+// prompt, or its doc) comes with the format in parentheses, and the
+// current value sits in the prompt:
+//
+//	What time should the screen turn on? (HH:MM, 24-hour, e.g. 07:30)
+//	schedule.on [07:00]>
+//
+// A value that breaks the rule gets a line of its own instead.
 func (r *Repl) ask(sec, key string, read reader, opts askOpts) askOutcome {
 	addr := address(sec, key, r.ini.delim)
 	rl := r.schema.ruleFor(sec, key)
-	if rl != nil {
-		switch {
-		case rl.prompt != "":
-			fmt.Println(rl.prompt)
-		case rl.doc != "":
-			fmt.Println(rl.doc)
-		}
-		fmt.Println("format:", rl.Hint())
+	if line := questionLine(rl); line != "" {
+		fmt.Println(line)
 	}
-	fmt.Println("now:", r.nowText(sec, key, rl))
+	cur, shown, invalid := r.current(sec, key, rl)
+	if invalid != nil {
+		fmt.Println("current value is invalid:", invalid)
+	}
 
 	var choices []string
 	if rl != nil {
@@ -82,7 +86,11 @@ func (r *Repl) ask(sec, key string, read reader, opts askOpts) askOutcome {
 	}
 	old, had := valueAt(r.ini, sec, key)
 	for {
-		answer, err := read(addr+"> ", choices, r.recallFor(sec, key))
+		prompt := addr + "> "
+		if shown {
+			prompt = addr + " [" + cur + "]> "
+		}
+		answer, err := read(prompt, choices, r.recallFor(sec, key, rl))
 		if err != nil {
 			fmt.Println("cancelled")
 			return askCancelled
@@ -93,7 +101,6 @@ func (r *Repl) ask(sec, key string, read reader, opts askOpts) askOutcome {
 				errorf("%s; type a value (Ctrl+C stops)", why)
 				continue
 			}
-			fmt.Println("unchanged")
 			return askKept
 		}
 		value := answer
@@ -124,6 +131,44 @@ func (r *Repl) ask(sec, key string, read reader, opts askOpts) askOutcome {
 	}
 }
 
+// questionLine is the line above the prompt: the rule's prompt (or doc)
+// with its format in parentheses, or just one of them.
+func questionLine(rl *rule) string {
+	if rl == nil {
+		return ""
+	}
+	text := rl.prompt
+	if text == "" {
+		text = rl.doc
+	}
+	hint := rl.Hint()
+	if rl.typ == "string" && rl.pattern == nil && rl.format == "" {
+		hint = "" // "text" says nothing a question doesn't
+	}
+	switch {
+	case text == "":
+		return hint
+	case hint == "":
+		return text
+	default:
+		return text + " (" + hint + ")"
+	}
+}
+
+// current is the value shown in the prompt's brackets: what applications
+// see now, set in the config or a default, in its standard spelling.
+// shown is false when there is no value, or when the config's value is
+// invalid; invalid then says why.
+func (r *Repl) current(sec, key string, rl *rule) (value string, shown bool, invalid error) {
+	if raw, ok := valueAt(r.ini, sec, key); ok && rl != nil {
+		if _, err := rl.check(raw); err != nil {
+			return "", false, err
+		}
+	}
+	v, ok := valueAt(r.view(), sec, key)
+	return v, ok, nil
+}
+
 // needsAnswer says why Enter alone isn't enough during ask: the key is
 // required and has no value, or its value breaks the rule. "" if it is.
 func (r *Repl) needsAnswer(sec, key string, rl *rule) string {
@@ -142,41 +187,27 @@ func (r *Repl) needsAnswer(sec, key string, rl *rule) string {
 	return ""
 }
 
-// recallFor is what the up arrow offers: the current value, then the
-// default when it differs. Empty values are left out.
-func (r *Repl) recallFor(sec, key string) []string {
+// recallFor is what the up arrow offers: the current value (as the
+// prompt shows it, or as the config spells it when it is invalid), then
+// the default when it differs. Empty values are left out.
+func (r *Repl) recallFor(sec, key string, rl *rule) []string {
 	var out []string
-	if v, ok := valueAt(r.ini, sec, key); ok && v != "" {
+	if v, shown, _ := r.current(sec, key, rl); shown && v != "" {
 		out = append(out, v)
+	} else if raw, ok := valueAt(r.ini, sec, key); ok && raw != "" {
+		out = append(out, raw) // invalid: offered for fixing
 	}
-	if d, ok := r.schema.defaultFor(sec, key); ok && d != "" && (len(out) == 0 || out[0] != d) {
-		out = append(out, d)
+	if d, ok := r.schema.defaultFor(sec, key); ok && d != "" {
+		if rl != nil {
+			if std, err := rl.check(d); err == nil {
+				d = std
+			}
+		}
+		if len(out) == 0 || out[0] != d {
+			out = append(out, d)
+		}
 	}
 	return out
-}
-
-// nowText describes a key's current value and where it comes from.
-func (r *Repl) nowText(sec, key string, rl *rule) string {
-	raw, inConfig := valueAt(r.ini, sec, key)
-	eff, inEffect := valueAt(r.view(), sec, key)
-	show := func(v string) string {
-		if v == "" {
-			return "(empty)"
-		}
-		return v
-	}
-	switch {
-	case inConfig && rl != nil:
-		if _, err := rl.check(raw); err != nil {
-			return show(raw) + " (invalid: " + err.Error() + ")"
-		}
-		return show(eff)
-	case inConfig:
-		return show(raw)
-	case inEffect:
-		return show(eff) + " (the default)"
-	}
-	return "not set"
 }
 
 // readAnswer reads one answer with the line editor. Tab completes the

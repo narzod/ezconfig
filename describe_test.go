@@ -106,6 +106,7 @@ func TestAskSet(t *testing.T) {
 	var prompts []string
 	var offered []string
 	r.askSet("app.mode", func(p string, choices, _ []string) (string, error) {
+		p = promptKey(p)
 		prompts = append(prompts, p)
 		offered = choices
 		a := answers[0]
@@ -173,6 +174,7 @@ sections=app,.
 		review:          {"", "", "s"}, // extra Enter presses only ask again
 	}
 	read := func(p string, _, recall []string) (string, error) {
+		p = promptKey(p)
 		asked = append(asked, p)
 		recalled = append(recalled, recall)
 		a := answers[p][0]
@@ -207,17 +209,18 @@ sections=app,.
 	}
 
 	// The up arrow offers the current value, then the default.
-	if got := r.recallFor("app", "locale"); !reflect.DeepEqual(got, []string{"en-US"}) {
+	if got := r.recallFor("app", "locale", s.ruleFor("app", "locale")); !reflect.DeepEqual(got, []string{"en-US"}) {
 		t.Errorf("recall, unset: %q", got)
 	}
 	ini.Set("app.locale", "fr-CA")
-	if got := r.recallFor("app", "locale"); !reflect.DeepEqual(got, []string{"fr-CA", "en-US"}) {
+	if got := r.recallFor("app", "locale", s.ruleFor("app", "locale")); !reflect.DeepEqual(got, []string{"fr-CA", "en-US"}) {
 		t.Errorf("recall, set: %q", got)
 	}
 
 	// ask SECTION walks one section; Ctrl+C stops the walk.
 	asked = nil
 	stop := func(p string, _, _ []string) (string, error) {
+		p = promptKey(p)
 		asked = append(asked, p)
 		return "", errors.New("aborted")
 	}
@@ -231,6 +234,7 @@ sections=app,.
 	// script answers each prompt in turn from a list.
 	script := func(steps ...[2]string) reader {
 		return func(p string, _, _ []string) (string, error) {
+			p = promptKey(p)
 			for i, st := range steps {
 				if st[0] == p {
 					steps = append(steps[:i:i], steps[i+1:]...)
@@ -275,6 +279,7 @@ sections=app,.
 	}
 	// Ctrl+C at the review is a stop, not a save.
 	ctrlC := func(p string, _, _ []string) (string, error) {
+		p = promptKey(p)
 		if p == review {
 			return "", errors.New("aborted")
 		}
@@ -353,4 +358,49 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// promptKey drops the current value from a prompt: "a.b [x]> " is "a.b> ".
+func promptKey(p string) string {
+	if i := strings.Index(p, " ["); i >= 0 && strings.HasSuffix(p, "]> ") {
+		return p[:i] + "> "
+	}
+	return p
+}
+
+func TestQuestionLayout(t *testing.T) {
+	dir := t.TempDir()
+	s, err := LoadSchema(writeFile(t, dir, "schema.ini", sectionSchema))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := questionLine(s.ruleFor("app", "locale")); got != "Which language and region? (language code, optionally with region (e.g. en-US))" {
+		t.Errorf("prompt and format: %q", got)
+	}
+	if got := questionLine(s.ruleFor("", "name")); got != "Name of this player" {
+		t.Errorf("plain string, doc only: %q", got)
+	}
+	if got := questionLine(s.ruleFor("app", "retries")); got != "a whole number from 0 to 9" {
+		t.Errorf("no prompt or doc: %q", got)
+	}
+
+	ini := NewIni()
+	ini.parse(strings.NewReader("[app]\nmode=tablet\nretries=\n"))
+	r := &Repl{ini: ini, saved: ini.Clone(), schema: s, path: filepath.Join(dir, "config.ini"), interactive: true}
+	var prompts []string
+	read := func(p string, _, _ []string) (string, error) {
+		prompts = append(prompts, p)
+		return "", errors.New("stop")
+	}
+	r.ask("app", "locale", read, askOpts{})  // a default
+	r.ask("app", "mode", read, askOpts{})    // invalid: no brackets
+	r.ask("app", "retries", read, askOpts{}) // set, but empty: invalid for an int
+	r.ask("", "name", read, askOpts{})       // nothing at all
+	want := []string{"app.locale [en-US]> ", "app.mode> ", "app.retries> ", "name> "}
+	if !reflect.DeepEqual(prompts, want) {
+		t.Errorf("prompts:\n got %q\nwant %q", prompts, want)
+	}
+	if got := r.recallFor("app", "mode", s.ruleFor("app", "mode")); !reflect.DeepEqual(got, []string{"tablet"}) {
+		t.Errorf("recall for an invalid value: %q", got)
+	}
 }
