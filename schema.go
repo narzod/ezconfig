@@ -71,8 +71,9 @@ type rule struct {
 	patternText string
 	required    bool
 	doc         string
-	format      string // how to write the value, in words
-	prompt      string // the question set asks
+	format      string   // how to write the value, in words
+	prompt      string   // the question set asks
+	bt          *builtin // a built-in type (types.go); nil for the basic types
 }
 
 // sectionInfo is an [@section NAME] block: a title, a description, and an
@@ -404,8 +405,10 @@ func parseRule(addr string, sec *section) (*rule, error) {
 			r.prompt = e.value
 		}
 	}
-	if !ruleTypes[r.typ] {
-		return nil, fmt.Errorf("unknown type %q (types: string, int, float, bool, enum)", r.typ)
+	r.bt = builtinType(r.typ)
+	if !ruleTypes[r.typ] && r.bt == nil {
+		return nil, fmt.Errorf("unknown type %q (types: string, int, float, bool, enum; built in: %s)",
+			r.typ, strings.Join(builtinNames(), ", "))
 	}
 	only := func(field string, set bool, types ...string) error {
 		if !set {
@@ -485,6 +488,9 @@ func (r *rule) check(v string) (string, error) {
 	if v == "" && r.typ != "string" {
 		return "", errors.New("the value is empty (unset the key to use the default)")
 	}
+	if r.bt != nil {
+		return r.bt.check(v)
+	}
 	switch r.typ {
 	case "string":
 		if r.pattern != nil && !r.pattern.MatchString(v) {
@@ -542,6 +548,9 @@ func (r *rule) boolWords() string {
 
 // choices are the values Tab offers after "set KEY=".
 func (r *rule) choices() []string {
+	if r.bt != nil {
+		return r.bt.choices
+	}
 	switch r.typ {
 	case "enum":
 		return r.values
@@ -554,6 +563,9 @@ func (r *rule) choices() []string {
 
 // summary describes the type in one line, for explain.
 func (r *rule) summary() string {
+	if r.bt != nil {
+		return r.typ + " (built in): " + r.bt.hint
+	}
 	switch r.typ {
 	case "string":
 		if r.pattern != nil {
@@ -1030,6 +1042,9 @@ func (s *Schema) isSection(cfg *Ini, name string) bool {
 func (r *rule) Hint() string {
 	if r.format != "" {
 		return r.format
+	}
+	if r.bt != nil {
+		return r.bt.hint
 	}
 	switch r.typ {
 	case "enum":

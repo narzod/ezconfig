@@ -52,12 +52,18 @@ has no `sections=`, so `ask` walks every section with rules, root first.
 
 ## types
 
-Rules for common kinds of value: colours, dates, 12- and 24-hour times, time
-zones, window geometry, host names, IPv4 addresses, URLs, email addresses,
-durations, sizes, UUIDs, version numbers and locales. Each pattern has a
-`format`, so people see words instead of the regular expression.
+Common kinds of value, mostly with built-in types: X11 color names, hex
+colors, dates (checked against the calendar), 12- and 24-hour times, time
+zones, host names, IPv4 addresses, ports, URLs, email addresses, durations
+and sizes. Window geometry, UUIDs, version numbers and locales have no
+built-in type yet, so they use a pattern with a `format`.
 
-    ezconfig explain                      every rule, with its format
-    ezconfig check                         event.date 2026-02-30 passes: a pattern can't count days in a month
-    ezconfig set event.open=19:30          refused: needs am or pm
-    ezconfig set job.cache=512MB           accepted
+    ezconfig list look                     steel blue in the config comes out as SteelBlue
+    ezconfig get event.open                7:30pm is stored as 7:30 PM
+    ezconfig set event.date=2026-02-30     refused: not a real date
+    ezconfig set look.background=Tomatoe   refused: did you mean Tomato?
+    ezconfig explain look                  each type describes itself; no list of colors
+
+In the shell, `set look.background=` then Tab twice offers all the color
+names (after asking), and `set look.background=dark` then Tab lists the
+Dark... ones.
