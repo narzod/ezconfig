@@ -27,6 +27,25 @@ tag (`git tag`), and its commit message says what changed.
 - **Schema built into the executable**, so a program ships one file.
   Revisit only if a schema file next to the program proves awkward.
 
+## For discussion
+
+- **A locale type** (`type=locale`): language and region checked against
+  ISO 639 and ISO 3166, forgiving input (`en_us` stored as `en-US`), Tab
+  in two steps (languages, then regions after the dash), suggestions for
+  near misses (`en-UK`, did you mean `en-GB`?). Open: any valid pairing or
+  only common ones; scripts such as `zh-Hant-TW`; whether a Linux-style
+  `en_US.UTF-8` form is ever needed.
+- **`values=` on an int**: "a number, but only one of these", e.g. a
+  rotation of 0, 90, 180 or 270. Today that is an enum, whose values are
+  names.
+- **Typed JSON from `emit`** (numbers and true/false where the schema
+  says so). Decided against for now: `emit` stays strings. It is the
+  config in JSON's shape, the same shape with or without a schema and
+  the same text `get` and `list` give; the schema has already checked and
+  standardized each value, so the program's conversion can't fail. A
+  typed form would also need a flag (`emit --typed`, failing without a
+  schema), the first option belonging to one command.
+
 ## Set aside
 
 - **Renaming the executable to change what it does** (e.g. `setup.exe`

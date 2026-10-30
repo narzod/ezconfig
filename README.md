@@ -8,7 +8,10 @@ the single source of truth for a config.
   unsaved changes, and `changes` lists them.
 - `ezconfig -c config.ini COMMAND ...` runs one command for scripts and other
   programs: `get`, `set`, `unset`, `keys`, `sections`, `list`, `emit`
-  (JSON for programs).
+  (JSON for programs). Values in `emit` are always strings, as in the
+  config itself: with a schema they are checked and in standard spelling,
+  so a program converts the ones it needs (decode into a map of strings,
+  then convert).
 
 An optional schema (`schema.ini` next to the config, or `-s FILE`) supplies
 defaults and rules. Its ordinary sections are defaults, shaped like a config;
