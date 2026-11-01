@@ -1,21 +1,19 @@
 package main
 
-// ask.go - asking for values: set KEY without "=", and ask.
+// ask.go - the ask command: questions for people, then a review.
 //
-//	config.ini=> set app.locale
-//	Language and region for dates and numbers
-//	format: language code, optionally with region (e.g. en-US)
-//	now: en-US (the default)
-//	app.locale> fr-CA
+//	config.ini=> ask app.locale
+//	Which language and region? (language code, optionally with region, e.g. en-US)
+//	app.locale [en-US]> fr-CA
 //
-// Enter alone keeps the current value; Ctrl+C or Ctrl+D cancels. Tab
-// completes the allowed values, and the up arrow recalls the current value
-// and the default, for editing. To set an empty value, use set KEY=.
-//
-// ask asks about each key of the schema's sections in turn, then shows
-// the changes and asks whether to save them. It runs in the shell or as
+// ask with no names walks through the schema's sections; ask NAME...
+// asks about the sections and keys named. Enter alone keeps a value;
+// Ctrl+C stops. Tab completes the allowed values, and the up arrow recalls
+// the current value and the default, for editing. Every run ends with the
+// changes and a question: save, redo, or quit. It runs in the shell or as
 // a one-shot command; either way the shell's history is set aside while
-// questions are asked.
+// questions are asked. ask is the one command meant for people: set never
+// asks.
 
 import (
 	"bytes"
@@ -43,22 +41,7 @@ type reader func(prompt string, choices, recall []string) (string, error)
 
 // askOpts adjusts how a question behaves.
 type askOpts struct {
-	insist   bool // ask: Enter can't leave a required key unset or an invalid value in place
-	remember bool // set KEY: put the resulting set command in the shell's history
-}
-
-// askSet explains key path and asks for its value using read.
-func (r *Repl) askSet(path string, read reader) askOutcome {
-	sec, key := r.ini.splitPath(path)
-	if strings.TrimSpace(key) == "" {
-		errorf("usage: set KEY=VALUE, or set KEY to be asked")
-		return askKept
-	}
-	if !r.interactive {
-		errorf("set %s: asking for a value needs a terminal; use set %s=VALUE", path, path)
-		return askKept
-	}
-	return r.ask(sec, key, read, askOpts{remember: true})
+	insist bool // ask: Enter can't leave a required key unset or an invalid value in place
 }
 
 // ask explains one key and asks for its value. The question (the rule's
@@ -115,14 +98,6 @@ func (r *Repl) ask(sec, key string, read reader, opts askOpts) askOutcome {
 		if err := r.ini.Set(addr, value); err != nil {
 			errorf("%v", err)
 			continue
-		}
-		if opts.remember {
-			// Recall the exact command with the up arrow, and keep it in history.
-			resolved := "set " + addr + "=" + value
-			if r.ln != nil {
-				r.ln.AppendHistory(resolved)
-			}
-			r.record(resolved)
 		}
 		if had && old == value {
 			return askKept
@@ -247,6 +222,7 @@ const (
 	askUnsaved                     // shell: answers kept in memory, not saved
 	askStopped                     // one-shot: Ctrl+C, or quit at the review
 	askRefused                     // no schema, bad arguments, or no terminal
+	askNotFound                    // a name that is neither a known key nor a section
 	askSaveFailed                  // the save itself failed
 )
 
@@ -257,30 +233,19 @@ const (
 // writes the config and reports whether it worked. In the shell, quitting
 // leaves the answers unsaved in memory; one-shot, it drops them.
 func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool) askResult {
-	switch {
-	case r.schema == nil:
-		errorf("no schema (put %s next to the config, or use -s FILE)", schemaName)
-		return askRefused
-	case len(args) > 1:
-		errorf("usage: ask [SECTION]")
-		return askRefused
-	case !r.interactive:
+	if !r.interactive {
 		errorf("ask needs a terminal; use set KEY=VALUE in scripts")
 		return askRefused
 	}
-	var sections []string
-	if len(args) == 1 {
-		name := args[0]
-		if name == r.ini.delim {
-			name = ""
-		}
-		if len(r.schema.AskKeys(r.ini, name)) == 0 {
-			errorf("nothing to ask about in %s", args[0])
+	var plan []askItem
+	if len(args) == 0 {
+		if r.schema == nil {
+			errorf("no schema (put %s next to the config, or use -s FILE); ask KEY works without one", schemaName)
 			return askRefused
 		}
-		sections = []string{name}
-	} else {
-		sections = r.schema.AskSections(r.ini)
+		for _, sec := range r.schema.AskSections(r.ini) {
+			plan = append(plan, askItem{sec: sec, whole: true})
+		}
 		if su := r.schema.ask; su != nil {
 			if su.title != "" {
 				fmt.Println(su.title)
@@ -295,6 +260,11 @@ func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool
 				fmt.Println(su.doc)
 			}
 		}
+	} else {
+		var res askResult
+		if plan, res = r.askPlan(args); res != askDone {
+			return res
+		}
 	}
 	fmt.Println("Enter keeps a value; Ctrl+C stops.")
 
@@ -305,7 +275,7 @@ func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool
 	}
 	question := "save, redo, or " + quitWord + "? [s/r/q] "
 	for {
-		if !r.askWalk(sections, read) {
+		if !r.askWalk(plan, read) {
 			fmt.Println()
 			return r.askLeave(diffIni(before, r.ini), oneShot, "stopped")
 		}
@@ -357,15 +327,104 @@ func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool
 	}
 }
 
-// askWalk asks every key of the given sections in turn. It returns false
-// when the person stops with Ctrl+C.
-func (r *Repl) askWalk(sections []string, read reader) bool {
-	for _, sec := range sections {
-		fmt.Println()
-		fmt.Println(r.schema.SectionHeading(sec))
-		for _, key := range r.schema.AskKeys(r.ini, sec) {
+// askItem is one thing ask was given: a whole section (its heading, then
+// each key) or a single key.
+type askItem struct {
+	sec, key string
+	whole    bool
+}
+
+// askPlan reads ask's names the way explain does: the delimiter alone is
+// the root keys, NAME followed by the delimiter is the section NAME, a name
+// containing the delimiter is a key, and a bare name is the root key, and
+// also the section of that name if there is one. A key must be one the
+// config or the schema knows; a section needs a schema, which says what to
+// ask. Nothing is asked unless every name makes sense.
+func (r *Repl) askPlan(names []string) ([]askItem, askResult) {
+	d := r.ini.delim
+	var plan []askItem
+	seen := map[askItem]bool{}
+	add := func(it askItem) {
+		if !seen[it] {
+			seen[it] = true
+			plan = append(plan, it)
+		}
+	}
+	var unknown []string
+	refused := false
+	section := func(name, sec string) bool {
+		if r.schema == nil {
+			errorf("%s: asking about a whole section needs a schema; name its keys instead", name)
+			refused = true
+			return true
+		}
+		if len(r.schema.AskKeys(r.ini, sec)) == 0 {
+			return false
+		}
+		add(askItem{sec: sec, whole: true})
+		return true
+	}
+	for _, name := range names {
+		switch {
+		case name == d:
+			if !section(name, "") {
+				unknown = append(unknown, name)
+			}
+		case strings.HasSuffix(name, d) && !strings.Contains(strings.TrimSuffix(name, d), d):
+			if !section(name, strings.TrimSuffix(name, d)) {
+				unknown = append(unknown, name)
+			}
+		default:
+			sec, key := r.ini.splitPath(name)
+			found := false
+			if key != "" && r.knownKey(sec, key) {
+				add(askItem{sec: sec, key: key})
+				found = true
+			}
+			if !strings.Contains(name, d) && r.schema.isSection(r.ini, name) && r.schema != nil {
+				found = section(name, name) || found
+			}
+			if !found {
+				unknown = append(unknown, name)
+			}
+		}
+	}
+	switch {
+	case refused:
+		return nil, askRefused
+	case len(unknown) > 0:
+		errorf("nothing to ask about: %s", strings.Join(unknown, ", "))
+		return nil, askNotFound
+	}
+	return plan, askDone
+}
+
+// knownKey reports whether a key is one ask can ask about: the config
+// sets it, or the schema has a rule or a default for it.
+func (r *Repl) knownKey(sec, key string) bool {
+	if _, ok := valueAt(r.ini, sec, key); ok {
+		return true
+	}
+	if r.schema.ruleFor(sec, key) != nil {
+		return true
+	}
+	_, ok := r.schema.defaultFor(sec, key)
+	return ok
+}
+
+// askWalk asks about each item of the plan in turn. It returns false when
+// the person stops with Ctrl+C.
+func (r *Repl) askWalk(plan []askItem, read reader) bool {
+	for _, it := range plan {
+		keys := []string{it.key}
+		if it.whole {
 			fmt.Println()
-			if r.ask(sec, key, read, askOpts{insist: true}) == askCancelled {
+			fmt.Println(r.schema.SectionHeading(it.sec))
+			keys = r.schema.AskKeys(r.ini, it.sec)
+		}
+		for _, key := range keys {
+			fmt.Println()
+			if r.ask(it.sec, key, read, askOpts{insist: true}) == askCancelled {
 				return false
 			}
 		}
@@ -413,16 +472,15 @@ func oneShotAsk(path, delim, schemaOpt string, args []string) int {
 	if err != nil {
 		return fail(exitFile, "%v", err)
 	}
-	if schemaPath == "" {
-		return fail(exitArgs, "no schema (put %s next to the config, or use -s FILE)", schemaName)
-	}
-	schema, err := LoadSchema(schemaPath)
-	if err != nil {
-		var se *SchemaError
-		if errors.As(err, &se) {
-			return fail(exitSyntax, "%s: %v", schemaPath, err)
+	var schema *Schema // without one, ask KEY still works; askAll says what doesn't
+	if schemaPath != "" {
+		if schema, err = LoadSchema(schemaPath); err != nil {
+			var se *SchemaError
+			if errors.As(err, &se) {
+				return fail(exitSyntax, "%s: %v", schemaPath, err)
+			}
+			return fail(exitFile, "%s: %v", schemaPath, err)
 		}
-		return fail(exitFile, "%s: %v", schemaPath, err)
 	}
 
 	r := &Repl{ini: ini, saved: ini.Clone(), schema: schema, path: path, interactive: true}
@@ -447,6 +505,8 @@ func oneShotAsk(path, delim, schemaOpt string, args []string) int {
 		return exitCancelled
 	case askRefused:
 		return exitArgs
+	case askNotFound:
+		return exitNotFound
 	case askSaveFailed:
 		return exitFile
 	}

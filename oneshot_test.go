@@ -190,3 +190,30 @@ func TestParseArgs(t *testing.T) {
 		}
 	}
 }
+
+func TestOneShotEmitClash(t *testing.T) {
+	dir := t.TempDir()
+	cfg := writeFile(t, dir, "config.ini", "net=wired\n[net]\nport=8080\n")
+	code, out, errOut := run(t, cfg, ".", "emit")
+	if code != exitRenamed || !strings.Contains(out, `"net=": "wired"`) ||
+		!strings.Contains(errOut, `root key "net" is shown as "net=" because [net] is a section`) {
+		t.Errorf("emit: %d\n%s\n%s", code, out, errOut)
+	}
+	if strings.Contains(errOut, "dump") {
+		t.Errorf("old name in message: %s", errOut)
+	}
+	if code, _, _ := run(t, cfg, ".", "emit", "net"); code != 0 {
+		t.Errorf("emit net: %d", code)
+	}
+	// A section that only the schema's defaults have clashes too, as emit sees it.
+	dir2 := t.TempDir()
+	cfg2 := writeFile(t, dir2, "config.ini", "net=wired\n")
+	writeFile(t, dir2, "schema.ini", "[net]\nport=8080\n")
+	if code, out, _ := run(t, cfg2, ".", "check"); code != exitInvalid || !strings.Contains(out, "net: a root key and a section") {
+		t.Errorf("check with a default section: %d %q", code, out)
+	}
+	// check reports the clash, with or without a schema.
+	if code, out, _ := run(t, cfg, ".", "check"); code != exitInvalid || !strings.Contains(out, "net: a root key and a section") {
+		t.Errorf("check: %d %q", code, out)
+	}
+}

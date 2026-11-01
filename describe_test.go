@@ -92,53 +92,69 @@ func TestSections(t *testing.T) {
 	}
 }
 
-func TestAskSet(t *testing.T) {
+func TestAskNames(t *testing.T) {
 	dir := t.TempDir()
 	s, err := LoadSchema(writeFile(t, dir, "schema.ini", sectionSchema))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ini := NewIni()
-	r := &Repl{ini: ini, schema: s, path: filepath.Join(dir, "config.ini"), interactive: true}
+	ini.parse(strings.NewReader("[app]\nextra=1\n[other]\nx=2\n"))
+	r := &Repl{ini: ini, saved: ini.Clone(), schema: s, path: filepath.Join(dir, "config.ini"), interactive: true}
 
-	// An invalid answer is asked again; the valid one is stored in standard spelling.
-	answers := []string{"Kiosk Mode", "KIOSK"}
+	plan, res := r.askPlan([]string{"app.mode", "app", ".", "name", "other.x", "app.mode"})
+	want := []askItem{
+		{sec: "app", key: "mode"},
+		{sec: "app", whole: true},
+		{sec: "", whole: true},
+		{sec: "", key: "name"},
+		{sec: "other", key: "x"}, // set in the config, no rule: still a key ask can ask about
+	}
+	if res != askDone || !reflect.DeepEqual(plan, want) {
+		t.Errorf("plan:\n got %v %v\nwant %v", res, plan, want)
+	}
+	// Unknown names are refused before anything is asked.
+	if _, res := r.askPlan([]string{"app.mode", "app.nope", "nope."}); res != askNotFound {
+		t.Errorf("unknown names: %v", res)
+	}
+	// other has no rules, so there is nothing to ask about it as a section.
+	if _, res := r.askPlan([]string{"other"}); res != askNotFound {
+		t.Errorf("section without rules: %v", res)
+	}
+
+	// One key: just the question, no heading, then the review.
 	var prompts []string
-	var offered []string
-	r.askSet("app.mode", func(p string, choices, _ []string) (string, error) {
-		p = promptKey(p)
-		prompts = append(prompts, p)
-		offered = choices
-		a := answers[0]
-		answers = answers[1:]
-		return a, nil
-	})
-	if v, _ := ini.Get("app.mode"); v != "kiosk" {
-		t.Errorf("app.mode = %q", v)
-	}
-	if len(prompts) != 2 || prompts[0] != "app.mode> " {
-		t.Errorf("prompts: %q", prompts)
-	}
-	if !reflect.DeepEqual(offered, []string{"kiosk", "desktop"}) {
-		t.Errorf("choices: %q", offered)
-	}
-	if last := r.session[len(r.session)-1]; last != "set app.mode=kiosk" {
-		t.Errorf("recorded: %q", last)
+	got := r.askAll([]string{"app.mode"}, func(p string, _, _ []string) (string, error) {
+		prompts = append(prompts, promptKey(p))
+		if p == "app.mode> " {
+			return "kiosk", nil
+		}
+		return "s", nil
+	}, func() bool { return true }, true)
+	if got != askDone || !reflect.DeepEqual(prompts, []string{"app.mode> ", "REVIEW"}) {
+		t.Errorf("ask app.mode: %v %q", got, prompts)
 	}
 
-	// Enter keeps the value; cancelling changes nothing.
-	r.askSet("app.mode", func(string, []string, []string) (string, error) { return "", nil })
-	r.askSet("app.mode", func(string, []string, []string) (string, error) { return "desktop", errors.New("aborted") })
-	if v, _ := ini.Get("app.mode"); v != "kiosk" {
-		t.Errorf("after Enter and cancel: %q", v)
+	// Without a schema, named keys still work; sections and plain ask don't.
+	bare := &Repl{ini: ini, saved: ini.Clone(), path: filepath.Join(dir, "config.ini"), interactive: true}
+	if plan, res := bare.askPlan([]string{"other.x"}); res != askDone || len(plan) != 1 {
+		t.Errorf("no schema, key: %v %v", res, plan)
+	}
+	if _, res := bare.askPlan([]string{"other."}); res != askRefused {
+		t.Errorf("no schema, section: %v", res)
+	}
+	if got := bare.askAll(nil, nil, nil, true); got != askRefused {
+		t.Errorf("no schema, plain ask: %v", got)
+	}
+	if _, res := bare.askPlan([]string{"other.newkey"}); res != askNotFound {
+		t.Errorf("no schema, unknown key: %v", res)
 	}
 
 	// Without a terminal, nothing is asked.
 	r.interactive = false
-	r.askSet("app.locale", func(string, []string, []string) (string, error) {
-		t.Error("asked without a terminal")
-		return "", nil
-	})
+	if got := r.askAll([]string{"app.mode"}, nil, nil, true); got != askRefused {
+		t.Errorf("no terminal: %v", got)
+	}
 }
 
 func TestAsk(t *testing.T) {

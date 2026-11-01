@@ -60,6 +60,19 @@ tag (`git tag`), and its commit message says what changed.
 - **A leading delimiter for root keys** (`.name`). Root keys are the
   common case and stay bare; `NAME.` is the section when both exist.
 - **Colour in output.** Plain text throughout.
+- **`set KEY` asking for a value.** One-shot commands are for programs and
+  never ask; `ask` is the one command for people, in the shell too. `ask
+  KEY` asks one question and ends with the same review, so a consultant
+  on the phone or a setup script can use it.
+- **Metadata in `emit`'s JSON** (a `_meta` member describing renames) and
+  **refusing to emit** when a root key and a section share a name. Instead
+  `emit` shows the root key as `NAME=` (no INI key can contain `=`, so it
+  can't collide), warns on stderr and exits 7; a program that checks the
+  code can read it, and one that doesn't expect it stops on the non-zero
+  status. A reserved name such as `""`, `default` or `_meta` would only
+  bring its own clashes.
+- **One set of names for root keys and sections.** INI allows the same
+  name for both; ezconfig keeps that freedom and handles it in `emit`.
 
 ## Notes
 

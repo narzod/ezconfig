@@ -49,8 +49,8 @@ func TestComplete(t *testing.T) {
 		{"get net.", []string{"net.host ", "net.port "}},
 		{"get net.p", []string{"net.port "}},
 		{"get name net.h", []string{"net.host "}},
-		{"set n", []string{"name", "nightly", "net."}},
-		{"set net.po", []string{"net.port"}},
+		{"set n", []string{"name=", "nightly=", "net."}},
+		{"set net.po", []string{"net.port="}},
 		{"set net.port=", []string{"net.port=8080"}},
 		{"set net.port=1 ", nil},
 		{"keys ", []string{".", "display", "net"}},
@@ -63,6 +63,9 @@ func TestComplete(t *testing.T) {
 		{"list ", []string{".", "display", "net"}},
 		{"list net ", nil},
 		{"emit ", []string{".", "display", "net"}},
+		{"ask n", []string{"name ", "nightly ", "net."}},
+		{"ask net.", []string{"net.host ", "net.port "}},
+		{"ask net.port ", []string{". ", "name ", "nightly ", "display.", "net."}},
 		{"l", []string{"list "}},
 		{"c", []string{"changes ", "check ", "copy "}},
 		{"m", []string{"move "}},
@@ -222,9 +225,9 @@ func TestCheckDelim(t *testing.T) {
 
 func TestJSON(t *testing.T) {
 	r := newTestRepl(t)
-	got, _, err := r.ini.JSON("")
-	if err != nil {
-		t.Fatal(err)
+	got, _, renamed := r.ini.JSON("")
+	if renamed != nil {
+		t.Fatalf("renamed without a clash: %q", renamed)
 	}
 	want := `{
   "name": "demo",
@@ -239,14 +242,25 @@ func TestJSON(t *testing.T) {
 }
 `
 	if got != want {
-		t.Errorf("dump:\n%s", got)
+		t.Errorf("emit:\n%s", got)
 	}
-	r.ini.Set("net", "clash")
-	if _, _, err := r.ini.JSON(""); err == nil {
-		t.Error("expected clash error")
+
+	// A root key named like a section is shown as NAME=; the section keeps its name.
+	r.ini.Set("net", "wired")
+	got, _, renamed = r.ini.JSON("")
+	if len(renamed) != 1 || renamed[0] != "net" || !strings.Contains(got, `"net=": "wired"`) ||
+		!strings.Contains(got, `"net": {`) {
+		t.Errorf("clash: %q\n%s", renamed, got)
+	}
+	if c := r.ini.Clashes(); len(c) != 1 || !strings.HasPrefix(c[0], "net: a root key and a section share this name") {
+		t.Errorf("clashes: %q", c)
+	}
+	// Each part on its own has no clash.
+	if root, _, renamed := r.ini.JSON("."); renamed != nil || !strings.Contains(root, `"net": "wired"`) {
+		t.Errorf("emit .: %q\n%s", renamed, root)
 	}
 	if empty, _, _ := NewIni().JSON(""); empty != "{}\n" {
-		t.Errorf("empty dump: %q", empty)
+		t.Errorf("empty emit: %q", empty)
 	}
 }
 

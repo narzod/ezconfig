@@ -19,7 +19,7 @@ import (
 )
 
 const helpText = `commands:
-set KEY[=VALUE]    set a value (asks for it when "=" is left out)
+set KEY=VALUE      set a value
 get KEY...         print values
 unset KEY...       remove keys
 wipe SECTION...    remove sections (asks first)
@@ -29,9 +29,9 @@ keys [SECTION]     list key names for everything, or for SECTION
 sections           list section names
 list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 emit [SECTION]     print everything, or SECTION, as JSON for programs
-check              report values that break the schema
+check              report problems: values that break the schema, clashing names
 explain [NAME...]  explain keys and sections, or everything
-ask [SECTION]      ask for each value in turn, then save, redo or quit
+ask [NAME...]      ask for values (all, or those named), then save, redo or quit
 status             show file details and session settings
 changes [SECTION]  show unsaved changes
 path               show the config's full path
@@ -210,6 +210,9 @@ func main() {
 			fmt.Printf("note: %s; type check for details\n", count(len(p), "value breaks the schema", "values break the schema"))
 		}
 	}
+	if c := schema.Effective(ini).Clashes(); len(c) > 0 {
+		fmt.Printf("note: %s; type check for details\n", count(len(c), "root key shares its name with a section", "root keys share their names with sections"))
+	}
 
 	r.ln = liner.NewLiner()
 	defer r.ln.Close()
@@ -254,12 +257,8 @@ func (r *Repl) exec(line string) bool {
 	case "set":
 		path, value, ok := strings.Cut(rest, "=")
 		path = strings.TrimSpace(path)
-		if !ok && len(args) == 1 { // set KEY: ask for the value
-			r.askSet(path, r.readAnswer)
-			break
-		}
 		if !ok || path == "" {
-			errorf("usage: set KEY=VALUE, or set KEY to be asked")
+			errorf("usage: set KEY=VALUE (to be asked for a value, use ask KEY)")
 			break
 		}
 		value = strings.TrimSpace(value)
@@ -415,28 +414,23 @@ func (r *Repl) exec(line string) bool {
 			errorf("usage: emit [SECTION]")
 			break
 		}
-		out, ok, err := r.view().JSON(firstOr(args, ""))
+		out, ok, renamed := r.view().JSON(firstOr(args, ""))
 		if !ok {
 			errorf("no such section: %s", args[0])
 			break
 		}
-		if err != nil {
-			errorf("dump: %v", err)
-			break
-		}
 		r.warnScope(firstOr(args, ""))
 		fmt.Print(out)
+		for _, k := range renamed {
+			errorf("%s", renameNote(k))
+		}
 
 	case "check":
 		if len(args) > 0 {
 			errorf("usage: check")
 			break
 		}
-		if r.schema == nil {
-			errorf("no schema (put %s next to the config, or start with -s FILE)", schemaName)
-			break
-		}
-		problems := r.schema.Problems(r.ini)
+		problems := append(r.view().Clashes(), r.schema.Problems(r.ini)...) // clashes as emit sees them
 		printLines(problems)
 		if len(problems) == 0 {
 			fmt.Println("no problems found")

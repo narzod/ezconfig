@@ -283,9 +283,9 @@ func TestCompleteWithSchema(t *testing.T) {
 			"display.rotation=180", "display.rotation=270"}},
 		{"set display.background=r", []string{"display.background=red"}},
 		{"set player.autostart=", []string{"player.autostart=on", "player.autostart=off"}},
-		{"get net.", []string{"net.port "}},       // a schema default the config never sets
-		{"unset net.", nil},                       // only what the config sets
-		{"set player.n", []string{"player.name"}}, // config key; Enter asks, or type "="
+		{"get net.", []string{"net.port "}},        // a schema default the config never sets
+		{"unset net.", nil},                        // only what the config sets
+		{"set player.n", []string{"player.name="}}, // config key
 		{"explain display.ro", []string{"display.rotation "}},
 	}
 	for _, c := range cases {
@@ -298,8 +298,8 @@ func TestCompleteWithSchema(t *testing.T) {
 	// What liner lists is only what remains to choose.
 	for line, want := range map[string][]string{
 		"set display.rotation=":   {"0", "90", "180", "270"},
-		"set display.":            {"background", "rotation", "scale", "width"}, // scale: a rule, no default
-		"set player.":             {"autostart", "debug", "name", "site"},       // site: required, no default
+		"set display.":            {"background=", "rotation=", "scale=", "width="}, // scale: a rule, no default
+		"set player.":             {"autostart=", "debug=", "name=", "site="},       // site: required, no default
 		"set display.background=": {"black", "white", "red", "green", "blue", "yellow"},
 	} {
 		if _, cands, _ := r.complete(line, len(line)); !reflect.DeepEqual(cands, want) {

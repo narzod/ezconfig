@@ -89,9 +89,8 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 				cands = []string{v}
 			}
 		} else {
-			// No "=" added: Enter then asks for the value, or type "=".
 			var settled string
-			settled, cands = keyPaths(r.knownKeys(), word, "")
+			settled, cands = keyPaths(r.knownKeys(), word, "=")
 			head += settled
 		}
 
@@ -105,9 +104,12 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 			cands = sectionNames(r.ini, word, "")
 		}
 
-	case "ask":
-		if len(args) == 1 {
-			cands = sectionNames(r.knownKeys(), word, "")
+	case "ask": // keys, and sections as "name." (any number of them)
+		var settled string
+		settled, cands = keyPaths(r.knownKeys(), word, " ")
+		head += settled
+		if word == "" || strings.HasPrefix(r.ini.delim, word) {
+			cands = append([]string{r.ini.delim + " "}, cands...) // the root keys
 		}
 	}
 	return head, cands, tail

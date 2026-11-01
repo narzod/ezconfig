@@ -513,14 +513,12 @@ func (ini *Ini) KeyCount() (total, root int) {
 	return total, root
 }
 
-// JSON renders the Ini as JSON in file order: root keys as string
-// members, sections as nested objects. All values are strings. A root
-// key with the same name as a section is reported as an error.
-//
-// With sec set, only that section is rendered, as a flat object; the
-// delimiter on its own renders only the root keys. ok is false if the
-// section doesn't exist.
-func (ini *Ini) JSON(sec string) (out string, ok bool, err error) {
+// JSON renders the config, or one section, as a JSON object of strings:
+// root keys at the top level, each section as an object. A root key and a
+// section can share a name in INI but not in one JSON object, so such a
+// root key is shown with "=" after its name ("net="), which no INI key can
+// contain; renamed lists the root keys shown that way.
+func (ini *Ini) JSON(sec string) (out string, ok bool, renamed []string) {
 	q := func(s string) string { b, _ := json.Marshal(s); return string(b) }
 	if sec != "" {
 		s := ini.sectionOrRoot(sec)
@@ -536,14 +534,14 @@ func (ini *Ini) JSON(sec string) (out string, ok bool, err error) {
 		}
 		return "{\n" + strings.Join(members, ",\n") + "\n}\n", true, nil
 	}
-	for _, e := range ini.root.entries {
-		if ini.section(e.key) != nil {
-			return "", true, fmt.Errorf("%q is both a root key and a section", e.key)
-		}
-	}
 	var members []string
 	for _, e := range ini.root.entries {
-		members = append(members, "  "+q(e.key)+": "+q(e.value))
+		name := e.key
+		if ini.section(e.key) != nil {
+			name += "="
+			renamed = append(renamed, e.key)
+		}
+		members = append(members, "  "+q(name)+": "+q(e.value))
 	}
 	for _, s := range ini.sections {
 		if len(s.entries) == 0 {
@@ -557,9 +555,26 @@ func (ini *Ini) JSON(sec string) (out string, ok bool, err error) {
 		members = append(members, "  "+q(s.name)+": {\n"+strings.Join(inner, ",\n")+"\n  }")
 	}
 	if len(members) == 0 {
-		return "{}\n", true, nil
+		return "{}\n", true, renamed
 	}
-	return "{\n" + strings.Join(members, ",\n") + "\n}\n", true, nil
+	return "{\n" + strings.Join(members, ",\n") + "\n}\n", true, renamed
+}
+
+// Clashes lists root keys that share their name with a section, as
+// problems for check: INI allows it, but emit has to rename the key.
+func (ini *Ini) Clashes() []string {
+	var out []string
+	for _, e := range ini.root.entries {
+		if ini.section(e.key) != nil {
+			out = append(out, fmt.Sprintf("%s: a root key and a section share this name; emit shows the key as %s=", e.key, e.key))
+		}
+	}
+	return out
+}
+
+// renameNote is the warning emit gives for a renamed root key.
+func renameNote(key string) string {
+	return fmt.Sprintf("emit: root key %q is shown as %q because [%s] is a section", key, key+"=", key)
 }
 
 // sortedCopy is a small helper for stable, predictable completion lists.

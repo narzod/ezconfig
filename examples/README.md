@@ -24,12 +24,12 @@ Then open the shell with `ezconfig` and try:
 - `ask`: asks for each player, schedule and display value in the order
   `[@ask] sections=` gives, then shows the changes and asks: save, redo,
   or quit; Enter keeps a value (but not a missing site), and at
-  the end only s, e or q will do
+  the end only s, r or q will do
 - `ask schedule`, then the up arrow at a question: recalls the current
   value and the default for editing
-- `set schedule.on` (no `=`): asks for the time, says what format it needs,
-  and asks again after an answer like 7am; Enter alone keeps the value
-- `set display.rotation`, then Tab twice at the question: lists 0 90 180 270
+- `ask schedule.on`: just that question, then the review; it asks again
+  after an answer like 7am
+- `ask display.rotation`, then Tab twice at the question: lists 0 90 180 270
 - `set display.rotation=` then Tab twice: lists 0 90 180 270
 - `set display.` then Tab twice: lists the keys you can set, including scale
 - `set player.` then Tab twice: includes site, which nothing has set yet
@@ -49,6 +49,7 @@ has no `sections=`, so `ask` walks every section with rules, root first.
     ezconfig unset backup.source           allowed, but then `ezconfig check` reports it as required
     ezconfig explain .                    the root keys
     ezconfig ask                           asks for each value, then save, redo or quit; exit 0, or 6 if not saved
+    ezconfig ask backup.target             one question, then the same review
 
 ## types
 

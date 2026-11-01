@@ -30,6 +30,7 @@ const (
 	exitArgs      = 4 // bad arguments
 	exitNotFound  = 5 // key or section not found
 	exitCancelled = 6 // ask stopped or not saved; nothing written
+	exitRenamed   = 7 // emit renamed a root key that clashed with a section; the output is complete
 )
 
 // oneShotCommands are available from the command line; shellOnly are
@@ -57,9 +58,10 @@ keys [SECTION]     list key names for everything, or for SECTION
 sections           list section names
 list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 emit [SECTION]     print everything, or SECTION, as JSON for programs
-check              report values that break the schema
+check              report problems: values that break the schema, clashing names
 explain [NAME...]  explain keys and sections, or everything
-ask [SECTION]      ask for each value, then save, redo or quit (needs a terminal)
+ask [NAME...]      ask for values (all, or those named), then save, redo or quit
+                   (the one command for people; needs a terminal)
 help               show this text
 version            show the program version
 
@@ -75,7 +77,9 @@ exit status:
 3  config or schema missing or unreadable
 4  bad arguments
 5  key or section not found
-6  ask stopped or quit; nothing saved`
+6  ask stopped or quit; nothing saved
+7  emit renamed a root key that shares its name with a section (the output
+   is complete: the key is shown as NAME=)`
 
 // oneShot runs cmd with args against the config at path and returns the
 // exit status. Output goes to stdout, messages to stderr.
@@ -233,10 +237,7 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		if len(args) > 0 {
 			return fail(exitArgs, "usage: check")
 		}
-		if schema == nil {
-			return needSchema()
-		}
-		problems := schema.Problems(ini)
+		problems := append(view.Clashes(), schema.Problems(ini)...) // clashes as emit sees them, defaults included
 		for _, p := range problems {
 			fmt.Fprintln(stdout, p)
 		}
@@ -281,15 +282,18 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		if len(args) > 1 {
 			return fail(exitArgs, "usage: emit [SECTION]")
 		}
-		out, ok, err := view.JSON(firstOr(args, ""))
+		out, ok, renamed := view.JSON(firstOr(args, ""))
 		if !ok {
 			return notFound(args)
 		}
-		if err != nil {
-			return fail(exitSyntax, "dump: %v", err)
-		}
 		warnScope(firstOr(args, ""))
 		fmt.Fprint(stdout, out)
+		for _, k := range renamed {
+			fmt.Fprintln(stderr, "ezconfig: "+renameNote(k))
+		}
+		if len(renamed) > 0 {
+			return exitRenamed
+		}
 		return exitOK
 
 	case "set":
