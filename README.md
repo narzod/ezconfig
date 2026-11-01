@@ -10,8 +10,9 @@ the single source of truth for a config.
   programs: `get`, `set`, `unset`, `keys`, `sections`, `list`, `emit`
   (JSON for programs). Values in `emit` are always strings, as in the
   config itself: with a schema they are checked and in standard spelling,
-  so a program converts the ones it needs (decode into a map of strings,
-  then convert).
+  so a program converts the ones it needs (decode into a plain map, then
+  convert). `man ./docs/ezconfig.1` (or `docs/ezconfig.txt`) has short
+  examples for PowerShell, Python and Go under USING FROM PROGRAMS.
 
 An optional schema (`schema.ini` next to the config, or `-s FILE`) supplies
 defaults and rules. Its ordinary sections are defaults, shaped like a config;

@@ -155,6 +155,59 @@ SCHEMA
        value is replaced by its default, or left out, with a warning on
        standard error.  -s none shows the config as written.
 
+USING FROM PROGRAMS
+       A program reads its settings with one call:
+
+              ezconfig emit
+
+       The output is the whole config as a JSON object, ready for any JSON
+       library: root keys at the top level, each section an object of its own.
+       With a schema it is already what the program should use: defaults fill
+       in keys the config doesn't set, values that break a rule are left out
+       (or replaced by their default), and bools, enums and built-in types
+       arrive in their standard spelling, so YES arrives as true.  The program
+       never sees a value the schema would refuse.
+
+       Every value is a string, as in the config itself; convert the ones you
+       need. Because each value has already been checked, the conversion can't
+       fail. Decode into a plain map (root keys are strings, sections are maps
+       of strings) rather than a typed structure.
+
+       Check the exit status: 0 means the JSON is complete; 7 means it is
+       complete but a root key was renamed (see EXIT STATUS); anything else
+       means stop. Warnings go to standard error, never into the JSON.  emit
+       SECTION gives one section on its own. A program that doesn't run in the
+       config's folder names it: ezconfig -c C:\SignLoop\config.ini emit.
+
+       PowerShell:
+
+              $c = ezconfig emit | ConvertFrom-Json
+              $port = [int]$c.net.port
+
+       Python:
+
+              out = subprocess.run(["ezconfig", "emit"],
+                                   capture_output=True, text=True)
+              if out.returncode not in (0, 7):
+                  raise SystemExit(out.stderr)
+              c = json.loads(out.stdout)
+              port = int(c["net"]["port"])
+
+       Go:
+
+              cmd := exec.Command("ezconfig", "emit")
+              out, _ := cmd.Output()
+              if code := cmd.ProcessState.ExitCode(); code != 0 && code != 7 {
+                  log.Fatal("ezconfig emit failed")
+              }
+              var c map[string]any
+              json.Unmarshal(out, &c)
+              net := c["net"].(map[string]any)
+              port, _ := strconv.Atoi(net["port"].(string))
+
+       For one or two values in a shell script, get is simpler: it prints just
+       the values, one per line.
+
 EXIT STATUS
        0      Success.
 
@@ -197,7 +250,7 @@ EXAMPLES
 
               ezconfig set display.rotation=90 player.debug=no
 
-       Give a program the whole config:
+       Give a program the whole config, as JSON:
 
               ezconfig emit > settings.json
 
