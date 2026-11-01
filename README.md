@@ -89,6 +89,9 @@ top, set apart by a blank line, stays at the top.
 A program's own setup script can hand the settings to `ezconfig ask` and
 act on its exit status; see `examples/setup-script/`.
 
+A manual page is in `docs/`: `ezconfig.1` for `man`, and `ezconfig.txt`
+for reading anywhere (`man ./docs/ezconfig.1` shows it on Linux).
+
 Run `ezconfig help` (or `help` inside the shell) for the full command list.
 
 ## Building

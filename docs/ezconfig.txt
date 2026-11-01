@@ -1,0 +1,215 @@
+EZCONFIG(1)                      User Commands                     EZCONFIG(1)
+
+NAME
+       ezconfig - read and change INI configs, with an optional schema
+
+SYNOPSIS
+       ezconfig [-c FILE] [-s FILE] [-d CHAR] [COMMAND [ARGS...]]
+
+DESCRIPTION
+       ezconfig is the single source of truth for a config: one tool that
+       reads and changes it, for people and for programs.
+
+       Without a command it opens an interactive shell with tab completion.
+       Changes stay in memory until saved; an asterisk in the prompt (*>)
+       means something is unsaved, and changes lists it.
+
+       With a command it runs that one command and exits. These one-shot
+       commands are meant for programs and scripts: data goes to standard
+       output, messages to standard error, and the exit status says what
+       happened. Writes are checked first and saved atomically.  ask is the
+       one command meant for people.
+
+OPTIONS
+       -c FILE
+              The config to use. Default: config.ini.
+
+       -s FILE
+              The schema to use, or none to read the config exactly as
+              written. Default: schema.ini next to the config, if there is
+              one.
+
+       -d CHAR
+              The delimiter between section and key in an address (one-shot
+              commands only; in the shell, use delim).  Default: a period (.).
+
+       -h, --help
+              Show the usage and exit.
+
+       --version
+              Show the version and exit.
+
+COMMANDS
+       These work both on the command line and in the shell.
+
+       get KEY...
+              Print values, one per line. All or nothing: if any key is
+              missing, nothing is printed.
+
+       set KEY=VALUE...
+              Set values. On the command line they are checked against the
+              schema and saved; in the shell they wait for save.  set never
+              asks for a value; use ask.
+
+       unset KEY...
+              Remove keys. With a schema, a key with a default falls back to
+              it.
+
+       keys [SECTION]
+              List key addresses, for everything or one section.
+
+       sections
+              List section names.
+
+       list [SECTION]
+              Print KEY=VALUE lines, for everything or one section.
+
+       emit [SECTION]
+              Print everything, or one section, as JSON for programs: root
+              keys at the top level, each section an object, every value a
+              string.
+
+       check  Report problems: values that break the schema, required keys
+              with no value, and root keys that share their name with a
+              section.
+
+       explain [NAME...]
+              Explain keys and sections from the schema, or everything.
+
+       ask [NAME...]
+              Ask for values, one question at a time: everything the schema
+              covers, or the sections and keys named. Each question shows what
+              the value should look like, with the current value in brackets;
+              Enter keeps it, Tab offers the choices, and the up arrow recalls
+              the current value and the default. It ends by listing the
+              changes and asking: save, redo, or quit. That question has no
+              default. Needs a terminal.
+
+       help   Show the commands.
+
+       version
+              Show the version.
+
+SHELL COMMANDS
+       These work only in the shell.
+
+       wipe SECTION...
+              Remove whole sections (asks first).
+
+       copy SRC DEST
+              Copy a section to a new one.
+
+       move SRC DEST
+              Move or rename a section.
+
+       changes [SECTION]
+              Show unsaved changes: ~ changed, + added, - removed.
+
+       status Show the config and schema, the file's state, and session
+              settings.
+
+       path   Show the config's full path.
+
+       save [FILE]
+              Write the changes, or write a copy to FILE.
+
+       revert Discard unsaved changes and reload.
+
+       history [on|off]
+              Show or switch command history for this config.
+
+       delim [CHAR]
+              Show or change the delimiter.
+
+       quit   Leave (asks first if anything is unsaved).
+
+ADDRESSING
+       A key is name (a root key, before any section) or section.name.  The
+       delimiter alone, ., means the root keys. Where a command takes a NAME,
+       a bare name is the root key, and also the section of that name if there
+       is one; name. with the delimiter after it is only the section.
+
+SCHEMA
+       A schema is itself an INI file. Its ordinary sections and root keys are
+       defaults, shaped like the config. Blocks whose names start with @
+       describe the config:
+
+       [@rule ADDRESS]
+              One key: its type (string, int, float, bool, enum, or a built-in
+              type), min, max, values, pattern, required, and for people
+              format, doc and prompt.
+
+       [@section NAME]
+              A section's title, doc and keys (the order to present them).
+              [@section .] is the root keys.
+
+       [@ask] What ask shows first and walks through: title, doc, sections,
+              and what the schema is: application and version.
+
+       Built-in types: x11color, hexcolor, date, time, time12, duration, size,
+       ipv4, ip, host, url, email, timezone, port. Each checks the value
+       properly and stores it in a standard spelling.
+
+       With a schema, reading commands show what programs should see: defaults
+       for keys the config doesn't set, and only valid values. An invalid
+       value is replaced by its default, or left out, with a warning on
+       standard error.  -s none shows the config as written.
+
+EXIT STATUS
+       0      Success.
+
+       1      A value breaks the schema (or check found a problem).
+
+       2      Syntax error in the config or schema.
+
+       3      Config or schema missing or unreadable.
+
+       4      Bad arguments.
+
+       5      Key or section not found.
+
+       6      ask stopped or quit; nothing saved.
+
+       7      emit renamed a root key that shares its name with a section. The
+              output is complete; the key is shown as NAME=, which no INI key
+              can contain.
+
+FILES
+       config.ini
+              The default config.
+
+       schema.ini
+              The schema, looked for next to the config.
+
+       .ezconfig/
+              A hidden folder next to the config holding its command history,
+              only if history is turned on.
+
+       Comments in a config are kept when it is saved, with the key or section
+       that follows them.
+
+EXAMPLES
+       Read a value in a script:
+
+              ezconfig get net.port
+
+       Set two values and save:
+
+              ezconfig set display.rotation=90 player.debug=no
+
+       Give a program the whole config:
+
+              ezconfig emit > settings.json
+
+       Check a config before deploying it:
+
+              ezconfig -c broken.ini check
+
+       Talk someone through one setting:
+
+              ezconfig ask schedule.showtime
+
+SEE ALSO
+       README.md and the examples folder in the ezconfig source.
+
+ezconfig 0.24.0                  November 2026                     EZCONFIG(1)

@@ -1,0 +1,296 @@
+.TH EZCONFIG 1 "November 2026" "ezconfig 0.24.0" "User Commands"
+.nh
+.ad l
+.SH NAME
+ezconfig \- read and change INI configs, with an optional schema
+.SH SYNOPSIS
+.B ezconfig
+.RB [ \-c
+.IR FILE ]
+.RB [ \-s
+.IR FILE ]
+.RB [ \-d
+.IR CHAR ]
+.RI [ COMMAND
+.RI [ ARGS ...]]
+.SH DESCRIPTION
+.B ezconfig
+is the single source of truth for a config: one tool that reads and
+changes it, for people and for programs.
+.PP
+Without a command it opens an interactive shell with tab completion.
+Changes stay in memory until saved; an asterisk in the prompt
+.RB ( *> )
+means something is unsaved, and
+.B changes
+lists it.
+.PP
+With a command it runs that one command and exits. These one-shot
+commands are meant for programs and scripts: data goes to standard
+output, messages to standard error, and the exit status says what
+happened. Writes are checked first and saved atomically.
+.B ask
+is the one command meant for people.
+.SH OPTIONS
+.TP
+.BI \-c " FILE"
+The config to use. Default:
+.BR config.ini .
+.TP
+.BI \-s " FILE"
+The schema to use, or
+.B none
+to read the config exactly as written. Default:
+.B schema.ini
+next to the config, if there is one.
+.TP
+.BI \-d " CHAR"
+The delimiter between section and key in an address (one-shot commands
+only; in the shell, use
+.BR delim ).
+Default: a period
+.RB ( . ).
+.TP
+.BR \-h ", " \-\-help
+Show the usage and exit.
+.TP
+.B \-\-version
+Show the version and exit.
+.SH COMMANDS
+These work both on the command line and in the shell.
+.TP
+.BI get " KEY..."
+Print values, one per line. All or nothing: if any key is missing,
+nothing is printed.
+.TP
+.BI set " KEY=VALUE..."
+Set values. On the command line they are checked against the schema and
+saved; in the shell they wait for
+.BR save .
+.B set
+never asks for a value; use
+.BR ask .
+.TP
+.BI unset " KEY..."
+Remove keys. With a schema, a key with a default falls back to it.
+.TP
+.BR keys " [\fISECTION\fR]"
+List key addresses, for everything or one section.
+.TP
+.B sections
+List section names.
+.TP
+.BR list " [\fISECTION\fR]"
+Print
+.I KEY=VALUE
+lines, for everything or one section.
+.TP
+.BR emit " [\fISECTION\fR]"
+Print everything, or one section, as JSON for programs: root keys at the
+top level, each section an object, every value a string.
+.TP
+.B check
+Report problems: values that break the schema, required keys with no
+value, and root keys that share their name with a section.
+.TP
+.BR explain " [\fINAME\fR...]"
+Explain keys and sections from the schema, or everything.
+.TP
+.BR ask " [\fINAME\fR...]"
+Ask for values, one question at a time: everything the schema covers, or
+the sections and keys named. Each question shows what the value should
+look like, with the current value in brackets; Enter keeps it, Tab
+offers the choices, and the up arrow recalls the current value and the
+default. It ends by listing the changes and asking: save, redo, or quit. That question has no default. Needs a terminal.
+.TP
+.B help
+Show the commands.
+.TP
+.B version
+Show the version.
+.SH SHELL COMMANDS
+These work only in the shell.
+.TP
+.BI wipe " SECTION..."
+Remove whole sections (asks first).
+.TP
+.BI copy " SRC DEST"
+Copy a section to a new one.
+.TP
+.BI move " SRC DEST"
+Move or rename a section.
+.TP
+.BR changes " [\fISECTION\fR]"
+Show unsaved changes:
+.B ~
+changed,
+.B +
+added,
+.B \-
+removed.
+.TP
+.B status
+Show the config and schema, the file's state, and session settings.
+.TP
+.B path
+Show the config's full path.
+.TP
+.BR save " [\fIFILE\fR]"
+Write the changes, or write a copy to
+.IR FILE .
+.TP
+.B revert
+Discard unsaved changes and reload.
+.TP
+.BR history " [\fBon\fR|\fBoff\fR]"
+Show or switch command history for this config.
+.TP
+.BR delim " [\fICHAR\fR]"
+Show or change the delimiter.
+.TP
+.B quit
+Leave (asks first if anything is unsaved).
+.SH ADDRESSING
+A key is
+.I name
+(a root key, before any section) or
+.IR section.name .
+The delimiter alone,
+.BR . ,
+means the root keys. Where a command takes a
+.IR NAME ,
+a bare name is the root key, and also the section of that name if there
+is one;
+.I name.\&
+with the delimiter after it is only the section.
+.SH SCHEMA
+A schema is itself an INI file. Its ordinary sections and root keys are
+defaults, shaped like the config. Blocks whose names start with
+.B @
+describe the config:
+.TP
+.BI [@rule " ADDRESS" ]
+One key: its
+.B type
+(string, int, float, bool, enum, or a built-in type),
+.BR min ,
+.BR max ,
+.BR values ,
+.BR pattern ,
+.BR required ,
+and for people
+.BR format ,
+.B doc
+and
+.BR prompt .
+.TP
+.BI [@section " NAME" ]
+A section's
+.BR title ,
+.B doc
+and
+.B keys
+(the order to present them).
+.B [@section .]\&
+is the root keys.
+.TP
+.B [@ask]
+What
+.B ask
+shows first and walks through:
+.BR title ,
+.BR doc ,
+.BR sections ,
+and what the schema is:
+.B application
+and
+.BR version .
+.PP
+Built-in types: x11color, hexcolor, date, time, time12, duration, size,
+ipv4, ip, host, url, email, timezone, port. Each checks the value
+properly and stores it in a standard spelling.
+.PP
+With a schema, reading commands show what programs should see: defaults
+for keys the config doesn't set, and only valid values. An invalid value
+is replaced by its default, or left out, with a warning on standard
+error.
+.B \-s none
+shows the config as written.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+A value breaks the schema (or
+.B check
+found a problem).
+.TP
+.B 2
+Syntax error in the config or schema.
+.TP
+.B 3
+Config or schema missing or unreadable.
+.TP
+.B 4
+Bad arguments.
+.TP
+.B 5
+Key or section not found.
+.TP
+.B 6
+.B ask
+stopped or quit; nothing saved.
+.TP
+.B 7
+.B emit
+renamed a root key that shares its name with a section. The output is
+complete; the key is shown as
+.IR NAME= ,
+which no INI key can contain.
+.SH FILES
+.TP
+.B config.ini
+The default config.
+.TP
+.B schema.ini
+The schema, looked for next to the config.
+.TP
+.B .ezconfig/
+A hidden folder next to the config holding its command history, only if
+history is turned on.
+.PP
+Comments in a config are kept when it is saved, with the key or section
+that follows them.
+.SH EXAMPLES
+Read a value in a script:
+.PP
+.RS
+.B ezconfig get net.port
+.RE
+.PP
+Set two values and save:
+.PP
+.RS
+.B ezconfig set display.rotation=90 player.debug=no
+.RE
+.PP
+Give a program the whole config:
+.PP
+.RS
+.B ezconfig emit > settings.json
+.RE
+.PP
+Check a config before deploying it:
+.PP
+.RS
+.B ezconfig \-c broken.ini check
+.RE
+.PP
+Talk someone through one setting:
+.PP
+.RS
+.B ezconfig ask schedule.showtime
+.RE
+.SH SEE ALSO
+README.md and the examples folder in the ezconfig source.
