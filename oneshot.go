@@ -237,7 +237,8 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		if len(args) > 0 {
 			return fail(exitArgs, "usage: check")
 		}
-		problems := append(view.Clashes(), schema.Problems(ini)...) // clashes as emit sees them, defaults included
+		problems := append(view.Clashes(), view.OddSections()...) // names as emit sees them, defaults included
+		problems = append(problems, schema.Problems(ini)...)
 		for _, p := range problems {
 			fmt.Fprintln(stdout, p)
 		}
@@ -282,9 +283,12 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		if len(args) > 1 {
 			return fail(exitArgs, "usage: emit [SECTION]")
 		}
-		out, ok, renamed := view.JSON(firstOr(args, ""))
+		out, ok, renamed, err := view.JSON(firstOr(args, ""))
 		if !ok {
 			return notFound(args)
+		}
+		if err != nil { // nothing on stdout: half an answer would look whole
+			return fail(exitSyntax, "emit: %v", err)
 		}
 		warnScope(firstOr(args, ""))
 		fmt.Fprint(stdout, out)

@@ -199,7 +199,7 @@ sections=app,.
 	}
 	saves := 0
 	save := func() bool { saves++; return true }
-	if got := r.askAll(nil, read, save, false); got != askDone {
+	if got := r.askAll(nil, read, save, true); got != askDone {
 		t.Errorf("ask: result %d", got)
 	}
 	if !reflect.DeepEqual(asked, []string{"app.locale> ", "app.mode> ", "app.retries> ", "app.retries> ", "name> ",
@@ -243,7 +243,7 @@ sections=app,.
 	if got := r.askAll([]string{"app"}, stop, save, true); got != askStopped || len(asked) != 1 {
 		t.Errorf("one-shot cancel: result %d, asked %q", got, asked)
 	}
-	if got := r.askAll([]string{"app"}, stop, save, false); got != askUnsaved {
+	if got := r.askAll([]string{"app"}, stop, save, false); got != askDone {
 		t.Errorf("shell cancel: result %d", got)
 	}
 
@@ -280,7 +280,7 @@ sections=app,.
 			}
 		}
 		return "", nil
-	}, save, false)
+	}, save, true)
 	if got != askDone || saves != before {
 		t.Errorf("redo back to the old value: result %d, saves %d", got, saves-before)
 	}
@@ -293,7 +293,7 @@ sections=app,.
 		[2]string{review, "redo"},
 		[2]string{"app.retries> ", "7"}, // kiosk is kept with Enter
 		[2]string{review, "save"},
-	), save, false)
+	), save, true)
 	if v, _ := ini.Get("app.retries"); got != askDone || v != "7" || saves != before+1 {
 		t.Errorf("redo then save: result %d, retries %q", got, v)
 	}
@@ -306,8 +306,32 @@ sections=app,.
 		t.Errorf("one-shot quit: result %d", got)
 	}
 	ini.Set("app.mode", "kiosk") // a real one-shot run would have exited, dropping desktop
-	if got := r.askAll([]string{"app"}, script([2]string{"app.mode> ", "desktop"}, [2]string{review, "quit"}), save, false); got != askUnsaved || saves != before+1 {
-		t.Errorf("shell quit: result %d, saves %d", got, saves)
+
+	// In the shell there is no review: the answers join the session.
+	var shellPrompts []string
+	got = r.askAll([]string{"app"}, func(p string, _, _ []string) (string, error) {
+		shellPrompts = append(shellPrompts, promptKey(p))
+		if promptKey(p) == "app.mode> " {
+			return "desktop", nil
+		}
+		return "", nil
+	}, save, false)
+	if v, _ := ini.Get("app.mode"); got != askUnsaved || v != "desktop" || saves != before+1 || contains(shellPrompts, review) {
+		t.Errorf("shell ask: result %d, mode %q, saves %d, prompts %q", got, v, saves-before, shellPrompts)
+	}
+	// Ctrl+C in the shell keeps the answers already given.
+	ini.Set("app.mode", "kiosk")
+	got = r.askAll([]string{"app"}, func(p string, _, _ []string) (string, error) {
+		switch promptKey(p) {
+		case "app.locale> ":
+			return "de-DE", nil
+		case "app.mode> ":
+			return "", errors.New("aborted")
+		}
+		return "", nil
+	}, save, false)
+	if v, _ := ini.Get("app.locale"); got != askUnsaved || v != "de-DE" {
+		t.Errorf("shell Ctrl+C: result %d, locale %q", got, v)
 	}
 	// Ctrl+C at the review is a stop, not a save.
 	ctrlC := func(p string, _, _ []string) (string, error) {
@@ -316,7 +340,7 @@ sections=app,.
 			return "", errors.New("aborted")
 		}
 		if p == "app.mode> " {
-			return "kiosk", nil
+			return "desktop", nil // a change, so the review is reached
 		}
 		return "", nil
 	}

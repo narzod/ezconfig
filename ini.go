@@ -517,28 +517,34 @@ func (ini *Ini) KeyCount() (total, root int) {
 // root keys at the top level, each section as an object. A root key and a
 // section can share a name in INI but not in one JSON object, so such a
 // root key is shown with "=" after its name ("net="), which no INI key can
-// contain; renamed lists the root keys shown that way.
-func (ini *Ini) JSON(sec string) (out string, ok bool, renamed []string) {
+// contain; renamed lists the root keys shown that way. A section's name can
+// contain "=", though, so if that new name is already a section's, JSON
+// can't hold both: err says so, and out is empty.
+func (ini *Ini) JSON(sec string) (out string, ok bool, renamed []string, err error) {
 	q := func(s string) string { b, _ := json.Marshal(s); return string(b) }
 	if sec != "" {
 		s := ini.sectionOrRoot(sec)
 		if s == nil {
-			return "", false, nil
+			return "", false, nil, nil
 		}
 		if len(s.entries) == 0 {
-			return "{}\n", true, nil
+			return "{}\n", true, nil, nil
 		}
 		var members []string
 		for _, e := range s.entries {
 			members = append(members, "  "+q(e.key)+": "+q(e.value))
 		}
-		return "{\n" + strings.Join(members, ",\n") + "\n}\n", true, nil
+		return "{\n" + strings.Join(members, ",\n") + "\n}\n", true, nil, nil
 	}
 	var members []string
 	for _, e := range ini.root.entries {
 		name := e.key
 		if ini.section(e.key) != nil {
 			name += "="
+			if ini.section(name) != nil {
+				return "", true, nil, fmt.Errorf("root key %q would be shown as %q, but [%s] is also a section; JSON can't hold both. Rename the section, or use emit %s and emit %s and emit %s separately",
+					e.key, name, name, ini.delim, e.key, name)
+			}
 			renamed = append(renamed, e.key)
 		}
 		members = append(members, "  "+q(name)+": "+q(e.value))
@@ -555,9 +561,23 @@ func (ini *Ini) JSON(sec string) (out string, ok bool, renamed []string) {
 		members = append(members, "  "+q(s.name)+": {\n"+strings.Join(inner, ",\n")+"\n  }")
 	}
 	if len(members) == 0 {
-		return "{}\n", true, renamed
+		return "{}\n", true, renamed, nil
 	}
-	return "{\n" + strings.Join(members, ",\n") + "\n}\n", true, renamed
+	return "{\n" + strings.Join(members, ",\n") + "\n}\n", true, renamed, nil
+}
+
+// OddSections lists sections whose names contain "=" or brackets, as
+// problems for check: other INI readers accept them, but ezconfig never
+// creates them, and a name ending in "=" can be confused with a root key
+// that emit renamed.
+func (ini *Ini) OddSections() []string {
+	var out []string
+	for _, s := range ini.sections {
+		if strings.ContainsAny(s.name, "=[]") {
+			out = append(out, fmt.Sprintf("[%s]: a section name containing \"=\" or brackets can't always be told apart in emit or addressed by set; rename the section", s.name))
+		}
+	}
+	return out
 }
 
 // Clashes lists root keys that share their name with a section, as

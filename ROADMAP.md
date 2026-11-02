@@ -76,6 +76,10 @@ tag (`git tag`), and its commit message says what changed.
 
 ## Notes
 
+- **The shell collects changes; the command line completes them.** In
+  the shell, `set` and `ask` add to the session and `save` writes it all;
+  on the command line, `set` saves at once and `ask` ends with a review
+  (save, redo or quit) and an exit status.
 - Windows builds keep their symbols and carry version details and a
   manifest (winres/): a stripped, unsigned build was flagged by
   Defender. The manifest also keeps Windows from treating the program as

@@ -217,3 +217,28 @@ func TestOneShotEmitClash(t *testing.T) {
 		t.Errorf("check: %d %q", code, out)
 	}
 }
+
+func TestOneShotEmitDoubleClash(t *testing.T) {
+	dir := t.TempDir()
+	cfg := writeFile(t, dir, "config.ini", "net=wired\n[net]\nport=1\n[net=]\nbackup=yes\n")
+	code, out, errOut := run(t, cfg, ".", "emit")
+	if code != exitSyntax || out != "" || !strings.Contains(errOut, `but [net=] is also a section`) {
+		t.Errorf("emit: %d %q %q", code, out, errOut)
+	}
+	// The parts still come out on their own.
+	if code, out, _ := run(t, cfg, ".", "emit", "net="); code != 0 || !strings.Contains(out, `"backup": "yes"`) {
+		t.Errorf("emit net=: %d %q", code, out)
+	}
+	code, out, _ = run(t, cfg, ".", "check")
+	if code != exitInvalid || !strings.Contains(out, `[net=]: a section name containing "=" or brackets`) {
+		t.Errorf("check: %d %q", code, out)
+	}
+	// A section with "=" on its own still emits; check still points it out.
+	cfg2 := writeFile(t, dir, "two.ini", "[a=b]\nx=1\n")
+	if code, out, _ := run(t, cfg2, ".", "emit"); code != 0 || !strings.Contains(out, `"a=b": {`) {
+		t.Errorf("emit [a=b]: %d %q", code, out)
+	}
+	if code, _, _ := run(t, cfg2, ".", "check"); code != exitInvalid {
+		t.Errorf("check [a=b]: %d", code)
+	}
+}

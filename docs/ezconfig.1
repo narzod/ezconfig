@@ -1,4 +1,4 @@
-.TH EZCONFIG 1 "November 2026" "ezconfig 0.24.0" "User Commands"
+.TH EZCONFIG 1 "November 2026" "ezconfig 0.25.0" "User Commands"
 .nh
 .ad l
 .SH NAME
@@ -91,7 +91,11 @@ top level, each section an object, every value a string.
 .TP
 .B check
 Report problems: values that break the schema, required keys with no
-value, and root keys that share their name with a section.
+value, root keys that share their name with a section, and section names
+containing
+.B =
+or brackets (other INI readers accept them, but ezconfig never creates
+them).
 .TP
 .BR explain " [\fINAME\fR...]"
 Explain keys and sections from the schema, or everything.
@@ -101,7 +105,21 @@ Ask for values, one question at a time: everything the schema covers, or
 the sections and keys named. Each question shows what the value should
 look like, with the current value in brackets; Enter keeps it, Tab
 offers the choices, and the up arrow recalls the current value and the
-default. It ends by listing the changes and asking: save, redo, or quit. That question has no default. Needs a terminal.
+default. Needs a terminal.
+.IP
+On the command line,
+.B ask
+completes the change: it ends by listing the changes and asking: save,
+redo, or quit. That question has no default, so pressing Enter once too
+often can't lose or save anything. In the shell,
+.B ask
+is one tool among the others: the answers join the session's unsaved
+changes, one line says what changed, and
+.BR changes ,
+.B save
+and
+.B revert
+do the rest.
 .TP
 .B help
 Show the commands.
@@ -300,7 +318,10 @@ A value breaks the schema (or
 found a problem).
 .TP
 .B 2
-Syntax error in the config or schema.
+Syntax error in the config or schema, or
+.B emit
+refused a config it can't represent as JSON (a renamed root key would
+take a section's name).
 .TP
 .B 3
 Config or schema missing or unreadable.

@@ -70,8 +70,9 @@ COMMANDS
               string.
 
        check  Report problems: values that break the schema, required keys
-              with no value, and root keys that share their name with a
-              section.
+              with no value, root keys that share their name with a section,
+              and section names containing = or brackets (other INI readers
+              accept them, but ezconfig never creates them).
 
        explain [NAME...]
               Explain keys and sections from the schema, or everything.
@@ -81,9 +82,14 @@ COMMANDS
               covers, or the sections and keys named. Each question shows what
               the value should look like, with the current value in brackets;
               Enter keeps it, Tab offers the choices, and the up arrow recalls
-              the current value and the default. It ends by listing the
-              changes and asking: save, redo, or quit. That question has no
-              default. Needs a terminal.
+              the current value and the default. Needs a terminal.
+
+              On the command line, ask completes the change: it ends by
+              listing the changes and asking: save, redo, or quit. That
+              question has no default, so pressing Enter once too often can't
+              lose or save anything. In the shell, ask is one tool among the
+              others: the answers join the session's unsaved changes, one line
+              says what changed, and changes, save and revert do the rest.
 
        help   Show the commands.
 
@@ -213,7 +219,9 @@ EXIT STATUS
 
        1      A value breaks the schema (or check found a problem).
 
-       2      Syntax error in the config or schema.
+       2      Syntax error in the config or schema, or emit refused a config
+              it can't represent as JSON (a renamed root key would take a
+              section's name).
 
        3      Config or schema missing or unreadable.
 
@@ -265,4 +273,4 @@ EXAMPLES
 SEE ALSO
        README.md and the examples folder in the ezconfig source.
 
-ezconfig 0.24.0                  November 2026                     EZCONFIG(1)
+ezconfig 0.25.0                  November 2026                     EZCONFIG(1)

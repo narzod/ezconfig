@@ -36,10 +36,13 @@ blocks starting with `@` describe the config:
 `ask` is the one command meant for people (`set` never asks). On its own
 it walks through the schema's sections asking for each value; `ask NAME...`
 asks about the sections and keys named, so `ezconfig ask schedule.showtime`
-asks one question. Either way it then shows the changes and asks: save,
-redo the questions (starting from the answers given), or quit. That
-question has no default, so pressing Enter once too often can't lose
-anything. A named key works even without a schema. An `[@ask]` block gives it a `title`, `doc`
+asks one question. On the command line it then shows the changes and
+asks: save, redo the questions (starting from the answers given), or
+quit. That question has no default, so pressing Enter once too often
+can't lose anything. In the shell the answers simply join the session's
+unsaved changes, and one line says what changed: the shell collects
+changes, the command line completes them. A named key works even without
+a schema. An `[@ask]` block gives it a `title`, `doc`
 and `sections=` (which sections, in order), and can say what the schema
 is: `application=` (what it ships with) and `version=` (its own version),
 shown when `ask` starts and in `status`. During `ask`, Enter can't leave
@@ -81,7 +84,10 @@ object, so `emit` shows such a root key with `=` after its name
 (`"net=": "wired"`), which no INI key can contain; the section keeps its
 name. It says so on stderr and exits 7, so a program can tell; `emit .`
 and `emit net` give each part without renaming, and `check` reports the
-clash.
+clash. Section names may contain `=` (ezconfig never creates them, and
+`check` points them out), so if a `[net=]` section also exists, `emit`
+refuses with exit 2 and writes nothing, rather than produce JSON with two
+members of the same name.
 
 Comments in a config (lines starting with `;` or `#`) are kept when it is
 saved, with the key or section that follows them; a comment block at the

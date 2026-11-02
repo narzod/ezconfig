@@ -9,9 +9,10 @@ package main
 // ask with no names walks through the schema's sections; ask NAME...
 // asks about the sections and keys named. Enter alone keeps a value;
 // Ctrl+C stops. Tab completes the allowed values, and the up arrow recalls
-// the current value and the default, for editing. Every run ends with the
-// changes and a question: save, redo, or quit. It runs in the shell or as
-// a one-shot command; either way the shell's history is set aside while
+// the current value and the default, for editing. On the command line a
+// run ends with the changes and a question: save, redo, or quit. In the
+// shell the answers join the session's other unsaved changes and one line
+// says what changed. Either way the shell's history is set aside while
 // questions are asked. ask is the one command meant for people: set never
 // asks.
 
@@ -219,19 +220,21 @@ type askResult int
 
 const (
 	askDone       askResult = iota // saved, or nothing to change
-	askUnsaved                     // shell: answers kept in memory, not saved
+	askUnsaved                     // shell: answers joined the session, unsaved
 	askStopped                     // one-shot: Ctrl+C, or quit at the review
 	askRefused                     // no schema, bad arguments, or no terminal
 	askNotFound                    // a name that is neither a known key nor a section
 	askSaveFailed                  // the save itself failed
 )
 
-// askAll asks about each key of the schema's sections, or of one
-// section, then shows the changes and asks whether to save, redo the
-// questions (starting from these answers), or quit. That question has no default: Enter alone asks again,
-// so pressing Enter once too often can't lose or save anything. save
-// writes the config and reports whether it worked. In the shell, quitting
-// leaves the answers unsaved in memory; one-shot, it drops them.
+// askAll asks about everything the schema covers, or the sections and
+// keys named. The shell collects changes, so there the answers simply join
+// the session and one line says what changed. The command line completes
+// changes, so there it ends with the changes and a question with no
+// default: save, redo the questions (starting from these answers), or
+// quit. Enter alone asks again, so pressing Enter once too often can't
+// lose or save anything. save writes the config and reports whether it
+// worked.
 func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool) askResult {
 	if !r.interactive {
 		errorf("ask needs a terminal; use set KEY=VALUE in scripts")
@@ -266,18 +269,38 @@ func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool
 			return res
 		}
 	}
-	fmt.Println("Enter keeps a value; Ctrl+C stops.")
-
 	before := r.ini.Clone()
-	quitWord := "quit without saving"
 	if !oneShot {
-		quitWord = "quit and keep the answers unsaved"
+		// The shell collects changes: the answers join the session like any
+		// other edit, and save, revert and changes do the rest.
+		finished := r.askWalk(plan, read)
+		n, total := len(diffIni(before, r.ini)), r.unsaved()
+		var text string
+		switch {
+		case n == 0:
+			text = "no changes"
+		case total > n:
+			text = fmt.Sprintf("%s from ask; %d unsaved in all", plural(n, "change"), total)
+		default:
+			text = fmt.Sprintf("%s from ask, unsaved", plural(n, "change"))
+		}
+		if !finished {
+			text = "stopped; " + text
+		}
+		fmt.Println(text)
+		if n == 0 {
+			return askDone
+		}
+		return askUnsaved
 	}
-	question := "save, redo, or " + quitWord + "? [s/r/q] "
+
+	// The command line completes changes: review, then save, redo or quit.
+	fmt.Println("Enter keeps a value; Ctrl+C stops.")
+	question := "save, redo, or quit without saving? [s/r/q] "
 	for {
 		if !r.askWalk(plan, read) {
 			fmt.Println()
-			return r.askLeave(diffIni(before, r.ini), oneShot, "stopped")
+			return r.askLeave("stopped")
 		}
 
 		// The review: set apart from the questions above it.
@@ -292,16 +315,13 @@ func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool
 		for _, c := range changes {
 			fmt.Println(c.line(r.ini.delim))
 		}
-		if total := r.unsaved(); total > len(changes) { // the shell had unsaved changes already
-			fmt.Printf("(saving also writes %s made earlier)\n", plural(total-len(changes), "change"))
-		}
 		fmt.Println()
 		choice := ""
 		for choice == "" {
 			a, err := read(question, []string{"save", "redo", "quit"}, nil)
 			if err != nil { // Ctrl+C here is a deliberate stop
 				fmt.Println()
-				return r.askLeave(changes, oneShot, "stopped")
+				return r.askLeave("stopped")
 			}
 			switch strings.ToLower(strings.TrimSpace(a)) {
 			case "s", "save":
@@ -321,7 +341,7 @@ func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool
 			}
 			return askSaveFailed
 		case "quit":
-			return r.askLeave(changes, oneShot, "quit")
+			return r.askLeave("quit")
 		}
 		// redo: the same questions again, starting from these answers.
 	}
@@ -432,20 +452,10 @@ func (r *Repl) askWalk(plan []askItem, read reader) bool {
 	return true
 }
 
-// askLeave ends an ask run without saving: one-shot drops the answers,
-// the shell keeps them unsaved in memory.
-func (r *Repl) askLeave(changes []change, oneShot bool, how string) askResult {
-	switch {
-	case oneShot:
-		fmt.Println(how + "; nothing saved")
-		return askStopped
-	case len(changes) > 0:
-		fmt.Printf("%s; %s unsaved (type changes to see them, save to keep them)\n",
-			how, count(len(changes), "answer is", "answers are"))
-	default:
-		fmt.Println(how)
-	}
-	return askUnsaved
+// askLeave ends a command-line ask run without saving.
+func (r *Repl) askLeave(how string) askResult {
+	fmt.Println(how + "; nothing saved")
+	return askStopped
 }
 
 // oneShotAsk runs ezconfig ask [SECTION]: the questions with the line

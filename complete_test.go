@@ -225,7 +225,7 @@ func TestCheckDelim(t *testing.T) {
 
 func TestJSON(t *testing.T) {
 	r := newTestRepl(t)
-	got, _, renamed := r.ini.JSON("")
+	got, _, renamed, _ := r.ini.JSON("")
 	if renamed != nil {
 		t.Fatalf("renamed without a clash: %q", renamed)
 	}
@@ -247,7 +247,7 @@ func TestJSON(t *testing.T) {
 
 	// A root key named like a section is shown as NAME=; the section keeps its name.
 	r.ini.Set("net", "wired")
-	got, _, renamed = r.ini.JSON("")
+	got, _, renamed, _ = r.ini.JSON("")
 	if len(renamed) != 1 || renamed[0] != "net" || !strings.Contains(got, `"net=": "wired"`) ||
 		!strings.Contains(got, `"net": {`) {
 		t.Errorf("clash: %q\n%s", renamed, got)
@@ -256,10 +256,10 @@ func TestJSON(t *testing.T) {
 		t.Errorf("clashes: %q", c)
 	}
 	// Each part on its own has no clash.
-	if root, _, renamed := r.ini.JSON("."); renamed != nil || !strings.Contains(root, `"net": "wired"`) {
+	if root, _, renamed, _ := r.ini.JSON("."); renamed != nil || !strings.Contains(root, `"net": "wired"`) {
 		t.Errorf("emit .: %q\n%s", renamed, root)
 	}
-	if empty, _, _ := NewIni().JSON(""); empty != "{}\n" {
+	if empty, _, _, _ := NewIni().JSON(""); empty != "{}\n" {
 		t.Errorf("empty emit: %q", empty)
 	}
 }

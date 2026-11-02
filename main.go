@@ -31,7 +31,7 @@ list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
 emit [SECTION]     print everything, or SECTION, as JSON for programs
 check              report problems: values that break the schema, clashing names
 explain [NAME...]  explain keys and sections, or everything
-ask [NAME...]      ask for values (all, or those named), then save, redo or quit
+ask [NAME...]      ask for values (all, or those named); they join the unsaved changes
 status             show file details and session settings
 changes [SECTION]  show unsaved changes
 path               show the config's full path
@@ -212,6 +212,9 @@ func main() {
 	}
 	if c := schema.Effective(ini).Clashes(); len(c) > 0 {
 		fmt.Printf("note: %s; type check for details\n", count(len(c), "root key shares its name with a section", "root keys share their names with sections"))
+	}
+	if o := schema.Effective(ini).OddSections(); len(o) > 0 {
+		fmt.Printf("note: %s \"=\" or brackets; type check for details\n", count(len(o), "section name contains", "section names contain"))
 	}
 
 	r.ln = liner.NewLiner()
@@ -414,9 +417,13 @@ func (r *Repl) exec(line string) bool {
 			errorf("usage: emit [SECTION]")
 			break
 		}
-		out, ok, renamed := r.view().JSON(firstOr(args, ""))
+		out, ok, renamed, err := r.view().JSON(firstOr(args, ""))
 		if !ok {
 			errorf("no such section: %s", args[0])
+			break
+		}
+		if err != nil {
+			errorf("emit: %v", err)
 			break
 		}
 		r.warnScope(firstOr(args, ""))
@@ -430,7 +437,8 @@ func (r *Repl) exec(line string) bool {
 			errorf("usage: check")
 			break
 		}
-		problems := append(r.view().Clashes(), r.schema.Problems(r.ini)...) // clashes as emit sees them
+		problems := append(r.view().Clashes(), r.view().OddSections()...) // names as emit sees them
+		problems = append(problems, r.schema.Problems(r.ini)...)
 		printLines(problems)
 		if len(problems) == 0 {
 			fmt.Println("no problems found")

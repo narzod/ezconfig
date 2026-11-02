@@ -22,13 +22,12 @@ it automatically. Run these from inside the folder. On Windows, `echo
 Then open the shell with `ezconfig` and try:
 
 - `ask`: asks for each player, schedule and display value in the order
-  `[@ask] sections=` gives, then shows the changes and asks: save, redo,
-  or quit; Enter keeps a value (but not a missing site), and at
-  the end only s, r or q will do
+  `[@ask] sections=` gives; Enter keeps a value (but not a missing site).
+  The answers join the session: `changes` shows them, `save` keeps them
 - `ask schedule`, then the up arrow at a question: recalls the current
   value and the default for editing
-- `ask schedule.on`: just that question, then the review; it asks again
-  after an answer like 7am
+- `ask schedule.on`: just that question; it asks again after an answer
+  like 7am
 - `ask display.rotation`, then Tab twice at the question: lists 0 90 180 270
 - `set display.rotation=` then Tab twice: lists 0 90 180 270
 - `set display.` then Tab twice: lists the keys you can set, including scale
