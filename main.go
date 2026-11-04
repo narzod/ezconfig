@@ -194,6 +194,7 @@ func main() {
 			die(exitFile, "%s: %v", schemaPath, err)
 		}
 	}
+	setupColor() // the shell is for people
 	r := &Repl{ini: ini, saved: ini.Clone(), schema: schema, path: path, disk: statFile(path),
 		interactive: isTerminal(os.Stdin)}
 
@@ -207,14 +208,14 @@ func main() {
 	if schema != nil {
 		fmt.Printf("schema: %s (%s)\n", schemaLabel(schemaPath, path), schemaSummary(schema))
 		if p := schema.Problems(ini); len(p) > 0 {
-			fmt.Printf("note: %s; type check for details\n", count(len(p), "value breaks the schema", "values break the schema"))
+			fmt.Println(noteText(fmt.Sprintf("note: %s; type check for details", count(len(p), "value breaks the schema", "values break the schema"))))
 		}
 	}
 	if c := schema.Effective(ini).Clashes(); len(c) > 0 {
-		fmt.Printf("note: %s; type check for details\n", count(len(c), "root key shares its name with a section", "root keys share their names with sections"))
+		fmt.Println(noteText(fmt.Sprintf("note: %s; type check for details", count(len(c), "root key shares its name with a section", "root keys share their names with sections"))))
 	}
 	if o := schema.Effective(ini).OddSections(); len(o) > 0 {
-		fmt.Printf("note: %s \"=\" or brackets; type check for details\n", count(len(o), "section name contains", "section names contain"))
+		fmt.Println(noteText(fmt.Sprintf("note: %s \"=\" or brackets; type check for details", count(len(o), "section name contains", "section names contain"))))
 	}
 
 	r.ln = liner.NewLiner()
@@ -286,7 +287,7 @@ func (r *Repl) exec(line string) bool {
 		for _, p := range args {
 			sec, key := r.ini.splitPath(p)
 			for _, n := range notesFor(notes, [][2]string{{sec, key}}) {
-				errorf("%s", n)
+				warnf("%s", n)
 			}
 			if v, ok := view.Get(p); ok {
 				fmt.Println(v)
@@ -308,7 +309,7 @@ func (r *Repl) exec(line string) bool {
 			case removed && hasDef:
 				fmt.Printf("%s now uses the default (%s)\n", p, def)
 			case hasDef:
-				errorf("%s isn't set in the config; it already uses the default (%s)", p, def)
+				warnf("%s isn't set in the config; it already uses the default (%s)", p, def)
 			case !removed:
 				errorf("not found: %s", p)
 			}
@@ -429,7 +430,7 @@ func (r *Repl) exec(line string) bool {
 		r.warnScope(firstOr(args, ""))
 		fmt.Print(out)
 		for _, k := range renamed {
-			errorf("%s", renameNote(k))
+			warnf("%s", renameNote(k))
 		}
 
 	case "check":
@@ -450,7 +451,7 @@ func (r *Repl) exec(line string) bool {
 			break
 		}
 		if len(args) == 0 {
-			printLines(r.schema.ExplainAll(r.ini))
+			printHeadings(r.schema.ExplainAll(r.ini))
 			break
 		}
 		for i, p := range args {
@@ -462,7 +463,7 @@ func (r *Repl) exec(line string) bool {
 			if i > 0 {
 				fmt.Println()
 			}
-			printLines(lines)
+			printHeadings(lines)
 		}
 
 	case "ask":
@@ -539,7 +540,7 @@ func (r *Repl) warnDelim() {
 			break
 		}
 	}
-	fmt.Println(msg)
+	fmt.Println(noteText(msg))
 }
 
 // sectionLabel names a section in messages, spelling out the root.
@@ -583,53 +584,68 @@ func (r *Repl) changedOnDisk() bool {
 }
 
 func (r *Repl) status() {
+	line := func(label, value string) { fmt.Printf("%-10s %s\n", label, value) }
+	attention := func(s string) string { return out(styleYellow, s) }
+
 	// The two files.
-	fmt.Println("config:", r.path)
+	line("config", r.path)
 	if r.schema != nil {
-		fmt.Printf("schema: %s (%s)\n", r.schema.path, schemaSummary(r.schema))
+		line("schema", fmt.Sprintf("%s (%s)", r.schema.path, schemaSummary(r.schema)))
 	} else {
-		fmt.Println("schema: none")
+		line("schema", "none")
 	}
 
-	// The config file.
+	// The config file, and this session's changes to it.
 	fmt.Println()
 	if r.disk.exists {
-		fmt.Printf("on disk: yes, %s, modified %s\n",
-			humanSize(r.disk.size), r.disk.modTime.Format("2006-01-02 15:04"))
+		line("file", fmt.Sprintf("%s, saved %s", humanSize(r.disk.size), r.disk.modTime.Format("2006-01-02 15:04")))
+		if r.changedOnDisk() {
+			line("on disk", attention("changed since it was loaded; save will ask first"))
+		} else {
+			line("on disk", "unchanged since it was loaded")
+		}
 	} else {
-		fmt.Println("on disk: no, will be created on save")
+		line("file", "not created yet; save creates it")
 	}
-	fmt.Println("changed on disk since load:", yesNo(r.changedOnDisk()))
-	fmt.Println("writable:", yesNo(writable(r.path)))
-	if n := r.unsaved(); n > 0 {
-		fmt.Printf("unsaved changes: %d\n", n)
+	if writable(r.path) {
+		line("writable", "yes")
 	} else {
-		fmt.Println("unsaved changes: none")
+		line("writable", out(styleRed, "no"))
+	}
+	if n := r.unsaved(); n > 0 {
+		line("unsaved", attention(plural(n, "change")+" (type changes to see them)"))
+	} else {
+		line("unsaved", "nothing")
 	}
 
 	// What it holds.
 	fmt.Println()
 	total, root := r.ini.KeyCount()
-	fmt.Println("sections:", len(r.ini.Sections()))
+	contents := fmt.Sprintf("%s; %s set (%d root)", plural(len(r.ini.Sections()), "section"), plural(total, "key"), root)
 	if r.schema != nil {
 		inEffect, _ := r.view().KeyCount()
-		fmt.Printf("keys: %d set in the config (%d root), %d in effect\n", total, root, inEffect)
+		contents += fmt.Sprintf(", %d in effect", inEffect)
+	}
+	line("contents", contents)
+	problems := len(r.view().Clashes()) + len(r.view().OddSections()) + len(r.schema.Problems(r.ini))
+	if problems > 0 {
+		line("problems", out(styleRed, fmt.Sprintf("%d (type check for details)", problems)))
 	} else {
-		fmt.Printf("keys: %d (%d root)\n", total, root)
+		line("problems", "none")
 	}
 
 	// This session.
 	fmt.Println()
 	switch {
 	case !r.historyOn():
-		fmt.Println("delimiter:", r.ini.delim, "(this session only)")
-		fmt.Println("history: off")
+		line("delimiter", r.ini.delim+" (this session only)")
+		line("history", "off")
 	case r.histStopped:
-		fmt.Println("delimiter:", r.ini.delim)
-		fmt.Printf("history: on (%s), not recording: another session changed the delimiter\n", r.histLabel())
+		line("delimiter", r.ini.delim)
+		line("history", attention(fmt.Sprintf("on (%s), not recording: another session changed the delimiter", r.histLabel())))
 	default:
-		fmt.Println("delimiter:", r.ini.delim, "(remembered for this config)")
-		fmt.Printf("history: on (%s)\n", r.histLabel())
+		line("delimiter", r.ini.delim+" (remembered for this config)")
+		line("history", fmt.Sprintf("on (%s)", r.histLabel()))
 	}
 }
 
@@ -701,14 +717,31 @@ func firstOr(args []string, def string) string {
 	return def
 }
 
+// printHeadings prints explain's lines with section headings in bold.
+func printHeadings(lines []string) {
+	for _, l := range lines {
+		if strings.HasPrefix(l, "[") {
+			l = out(styleBold, l)
+		}
+		fmt.Println(l)
+	}
+}
+
 func printLines(lines []string) {
 	for _, l := range lines {
 		fmt.Println(l)
 	}
 }
 
+// errorf reports something that went wrong (red on a terminal).
 func errorf(format string, a ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", a...)
+	fmt.Fprintln(os.Stderr, paint(colorErr, styleRed, fmt.Sprintf(format, a...)))
+}
+
+// warnf reports something worth knowing that didn't stop the command
+// (yellow on a terminal): a value replaced by its default, a renamed key.
+func warnf(format string, a ...any) {
+	fmt.Fprintln(os.Stderr, paint(colorErr, styleYellow, fmt.Sprintf(format, a...)))
 }
 
 // die reports a startup error and exits with code.
@@ -742,6 +775,6 @@ func (r *Repl) warnScope(arg string) {
 		texts = notesIn(notes, arg, false)
 	}
 	for _, t := range texts {
-		errorf("%s", t)
+		warnf("%s", t)
 	}
 }

@@ -305,15 +305,15 @@ func (r *Repl) askAll(args []string, read reader, save func() bool, oneShot bool
 
 		// The review: set apart from the questions above it.
 		fmt.Println()
-		fmt.Println(strings.Repeat("-", 40))
+		fmt.Println(out(styleDim, strings.Repeat("-", 40)))
 		changes := diffIni(before, r.ini)
 		if len(changes) == 0 {
 			fmt.Println("no changes")
 			return askDone
 		}
-		fmt.Printf("changes to %s:\n", filepath.Base(r.path))
+		fmt.Println(out(styleBold, fmt.Sprintf("changes to %s:", filepath.Base(r.path))))
 		for _, c := range changes {
-			fmt.Println(c.line(r.ini.delim))
+			fmt.Println(changeText(c, r.ini.delim))
 		}
 		fmt.Println()
 		choice := ""
@@ -439,7 +439,7 @@ func (r *Repl) askWalk(plan []askItem, read reader) bool {
 		keys := []string{it.key}
 		if it.whole {
 			fmt.Println()
-			fmt.Println(r.schema.SectionHeading(it.sec))
+			fmt.Println(out(styleBold, r.schema.SectionHeading(it.sec)))
 			keys = r.schema.AskKeys(r.ini, it.sec)
 		}
 		for _, key := range keys {
@@ -493,6 +493,7 @@ func oneShotAsk(path, delim, schemaOpt string, args []string) int {
 		}
 	}
 
+	setupColor() // ask is for people
 	r := &Repl{ini: ini, saved: ini.Clone(), schema: schema, path: path, interactive: true}
 	r.ln = liner.NewLiner()
 	r.ln.SetTabCompletionStyle(liner.TabPrints)

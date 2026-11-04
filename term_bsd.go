@@ -15,3 +15,6 @@ func isTerminal(f *os.File) bool {
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), syscall.TIOCGETA, uintptr(unsafe.Pointer(&t)))
 	return errno == 0
 }
+
+// enableVT: Unix terminals understand colour codes already.
+func enableVT(*os.File) bool { return true }

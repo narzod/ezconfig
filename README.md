@@ -89,6 +89,11 @@ clash. Section names may contain `=` (ezconfig never creates them, and
 refuses with exit 2 and writes nothing, rather than produce JSON with two
 members of the same name.
 
+In the shell and in `ask`, a little colour marks what the text already
+says, as git does: `+` lines green, `-` red, `~` yellow, errors red,
+notes yellow, section headings bold. It is used only on a terminal, never
+for data or anything piped, and `NO_COLOR` (or `TERM=dumb`) turns it off.
+
 Comments in a config (lines starting with `;` or `#`) are kept when it is
 saved, with the key or section that follows them; a comment block at the
 top, set apart by a blank line, stays at the top.

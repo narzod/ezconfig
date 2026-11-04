@@ -346,7 +346,7 @@ func (r *Repl) historyCmd(args []string) {
 		r.removeHistDirIfEmpty()
 		fmt.Println("history: off")
 		if r.ini.delim != "." {
-			fmt.Printf("note: the delimiter %q is no longer remembered for this config\n", r.ini.delim)
+			fmt.Println(noteText(fmt.Sprintf("note: the delimiter %q is no longer remembered for this config", r.ini.delim)))
 		}
 
 	default:

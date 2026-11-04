@@ -59,7 +59,6 @@ tag (`git tag`), and its commit message says what changed.
   as setup scripts usually do; editing one key is what `set KEY` is for.
 - **A leading delimiter for root keys** (`.name`). Root keys are the
   common case and stay bare; `NAME.` is the section when both exist.
-- **Colour in output.** Plain text throughout.
 - **`set KEY` asking for a value.** One-shot commands are for programs and
   never ask; `ask` is the one command for people, in the shell too. `ask
   KEY` asks one question and ends with the same review, so a consultant
@@ -76,6 +75,11 @@ tag (`git tag`), and its commit message says what changed.
 
 ## Notes
 
+- **Colour, git-style.** Only on a terminal, only in the shell and `ask`,
+  only on what the text already marks (`+ - ~`, errors, notes, headings),
+  never on data; `NO_COLOR` and `TERM=dumb` turn it off. These are the
+  only environment variables ezconfig reads, because they are shared
+  conventions rather than settings of its own.
 - **The shell collects changes; the command line completes them.** In
   the shell, `set` and `ask` add to the session and `save` writes it all;
   on the command line, `set` saves at once and `ask` ends with a review

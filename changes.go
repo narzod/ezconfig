@@ -155,7 +155,7 @@ func (r *Repl) changesCmd(args []string) {
 		if filtered && c.sec != sec {
 			continue
 		}
-		fmt.Println(c.line(r.ini.delim))
+		fmt.Println(changeText(c, r.ini.delim))
 		n++
 	}
 	if n == 0 {
@@ -169,6 +169,6 @@ func (r *Repl) changesCmd(args []string) {
 		}
 	}
 	if r.changedOnDisk() {
-		fmt.Printf("note: %s changed on disk since it was loaded\n", filepath.Base(r.path))
+		fmt.Println(noteText(fmt.Sprintf("note: %s changed on disk since it was loaded", filepath.Base(r.path))))
 	}
 }

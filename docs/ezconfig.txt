@@ -111,7 +111,8 @@ SHELL COMMANDS
        changes [SECTION]
               Show unsaved changes: ~ changed, + added, - removed.
 
-       status Show the config and schema, the file's state, and session
+       status Show the config and schema, the file's state and unsaved
+              changes, what it holds and how many problems it has, and session
               settings.
 
        path   Show the config's full path.
@@ -235,6 +236,21 @@ EXIT STATUS
               output is complete; the key is shown as NAME=, which no INI key
               can contain.
 
+COLOR
+       In the shell and in ask, a little colour marks what the text already
+       says, as git does: added lines green, removed lines red and changed
+       lines yellow; errors red; notes and warnings yellow; section headings
+       bold. Colour is used only when the output is a terminal, so anything
+       piped or redirected is plain, and one-shot commands that print data
+       never use it.
+
+ENVIRONMENT
+       NO_COLOR
+              When set (to anything), no colour is used. A convention shared
+              by many tools.
+
+       TERM   When it is dumb, no colour is used.
+
 FILES
        config.ini
               The default config.
@@ -273,4 +289,4 @@ EXAMPLES
 SEE ALSO
        README.md and the examples folder in the ezconfig source.
 
-ezconfig 0.25.0                  November 2026                     EZCONFIG(1)
+ezconfig 0.26.0                  November 2026                     EZCONFIG(1)
