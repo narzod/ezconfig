@@ -43,3 +43,25 @@ func TestNoColorConventions(t *testing.T) {
 		}
 	}
 }
+
+func TestListAndJSONColor(t *testing.T) {
+	lines := []string{"name=demo", "net=.x=1"}
+	addrs := []string{"name", "net=.x"} // a section name with "=" in it
+	if got := listText(addrs, lines); got[1] != "net=.x=1" {
+		t.Errorf("colour off: %q", got)
+	}
+	js := "{\n  \"a\\\"b\": \"x: y\",\n  \"net\": {\n    \"port\": \"8080\"\n  }\n}\n"
+	if got := jsonText(js); got != js {
+		t.Errorf("colour off changed the JSON: %q", got)
+	}
+	colorOut = true
+	defer func() { colorOut = false }()
+	got := listText(addrs, lines)
+	if got[0] != "\x1b[36mname\x1b[0m=demo" || got[1] != "\x1b[36mnet=.x\x1b[0m=1" {
+		t.Errorf("list: %q", got)
+	}
+	want := "{\n  \x1b[36m\"a\\\"b\"\x1b[0m: \x1b[32m\"x: y\"\x1b[0m,\n  \x1b[36m\"net\"\x1b[0m: {\n    \x1b[36m\"port\"\x1b[0m: \x1b[32m\"8080\"\x1b[0m\n  }\n}\n"
+	if got := jsonText(js); got != want {
+		t.Errorf("json:\n got %q\nwant %q", got, want)
+	}
+}

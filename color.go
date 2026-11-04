@@ -31,6 +31,7 @@ const (
 	styleRed    = "31"
 	styleGreen  = "32"
 	styleYellow = "33"
+	styleCyan   = "36"
 )
 
 func paint(on bool, style, s string) string {
@@ -62,4 +63,60 @@ func noteText(s string) string {
 		return out(styleYellow, "note:") + rest
 	}
 	return s
+}
+
+// listText is list's KEY=VALUE lines for the shell, with each key in cyan.
+// addrs are the keys in the same order as lines, so a line is split where
+// its key ends rather than at an "=", which a section name may contain.
+func listText(addrs, lines []string) []string {
+	if !colorOut || len(addrs) != len(lines) {
+		return lines
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		if !strings.HasPrefix(l, addrs[i]+"=") {
+			out[i] = l
+			continue
+		}
+		out[i] = paint(true, styleCyan, addrs[i]) + l[len(addrs[i]):]
+	}
+	return out
+}
+
+// jsonText colours emit's JSON for the shell the way jq does: keys cyan,
+// string values green, everything else plain.
+func jsonText(js string) string {
+	if !colorOut {
+		return js
+	}
+	var b strings.Builder
+	for i := 0; i < len(js); i++ {
+		if js[i] != '"' {
+			b.WriteByte(js[i])
+			continue
+		}
+		j := i + 1 // find the closing quote, skipping escaped characters
+		for j < len(js) && js[j] != '"' {
+			if js[j] == '\\' {
+				j++
+			}
+			j++
+		}
+		if j >= len(js) {
+			b.WriteString(js[i:])
+			break
+		}
+		str := js[i : j+1]
+		k := j + 1
+		for k < len(js) && (js[k] == ' ' || js[k] == '\t') {
+			k++
+		}
+		if k < len(js) && js[k] == ':' {
+			b.WriteString(paint(true, styleCyan, str))
+		} else {
+			b.WriteString(paint(true, styleGreen, str))
+		}
+		i = j
+	}
+	return b.String()
 }

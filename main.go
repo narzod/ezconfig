@@ -410,8 +410,9 @@ func (r *Repl) exec(line string) bool {
 			errorf("no such section: %s", args[0])
 			break
 		}
+		addrs, _ := r.view().KeyPaths(firstOr(args, ""))
 		r.warnScope(firstOr(args, ""))
-		printLines(lines)
+		printLines(listText(addrs, lines))
 
 	case "emit":
 		if len(args) > 1 {
@@ -428,7 +429,7 @@ func (r *Repl) exec(line string) bool {
 			break
 		}
 		r.warnScope(firstOr(args, ""))
-		fmt.Print(out)
+		fmt.Print(jsonText(out))
 		for _, k := range renamed {
 			warnf("%s", renameNote(k))
 		}

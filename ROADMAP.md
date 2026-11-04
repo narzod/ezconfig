@@ -76,8 +76,8 @@ tag (`git tag`), and its commit message says what changed.
 ## Notes
 
 - **Colour, git-style.** Only on a terminal, only in the shell and `ask`,
-  only on what the text already marks (`+ - ~`, errors, notes, headings),
-  never on data; `NO_COLOR` and `TERM=dumb` turn it off. These are the
+  only on what the text already marks (`+ - ~`, errors, notes, headings,
+  keys in shell `list` and `emit`), never on one-shot data; `NO_COLOR` and `TERM=dumb` turn it off. These are the
   only environment variables ezconfig reads, because they are shared
   conventions rather than settings of its own.
 - **The shell collects changes; the command line completes them.** In

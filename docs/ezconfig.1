@@ -1,4 +1,4 @@
-.TH EZCONFIG 1 "November 2026" "ezconfig 0.26.0" "User Commands"
+.TH EZCONFIG 1 "November 2026" "ezconfig 0.26.1" "User Commands"
 .nh
 .ad l
 .SH NAME
@@ -348,9 +348,13 @@ In the shell and in
 .BR ask ,
 a little colour marks what the text already says, as git does: added
 lines green, removed lines red and changed lines yellow; errors red;
-notes and warnings yellow; section headings bold. Colour is used only
-when the output is a terminal, so anything piped or redirected is plain,
-and one-shot commands that print data never use it.
+notes and warnings yellow; section headings bold. In the shell,
+.B list
+shows keys in cyan, and
+.B emit
+colours JSON as jq does: keys cyan, string values green. Colour is used
+only when the output is a terminal, so anything piped or redirected is
+plain, and one-shot commands that print data never use it.
 .SH ENVIRONMENT
 .TP
 .B NO_COLOR
