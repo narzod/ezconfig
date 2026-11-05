@@ -29,13 +29,13 @@ func TestComplete(t *testing.T) {
 		line string
 		want []string
 	}{
-		{"", []string{"ask ", "changes ", "check ", "copy ", "delim ", "emit ", "explain ", "get ", "help ", "history ", "keys ", "list ", "move ", "path ", "quit ",
+		{"", []string{"ask ", "changes ", "check ", "copy ", "delim ", "explain ", "export ", "get ", "help ", "history ", "keys ", "list ", "move ", "path ", "quit ",
 			"revert ", "save ", "sections ", "set ", "status ", "unset ", "version ", "wipe "}},
 		{"se", []string{"sections ", "set "}}, // ask no longer clashes with set
 		{"delim ", []string{"/", ":", "|"}},
 		{"d", []string{"delim "}},
-		{"e", []string{"emit ", "explain "}},
-		{"em", []string{"emit "}},
+		{"e", []string{"explain ", "export "}},
+		{"ex", []string{"explain ", "export "}},
 		{"w", []string{"wipe "}},
 		{"h", []string{"help ", "history "}},
 		{"copy ", []string{". ", "display ", "net "}},
@@ -60,9 +60,11 @@ func TestComplete(t *testing.T) {
 		{"unset n", []string{"name ", "nightly ", "net."}},
 		{"wipe ", []string{". ", "display ", "net "}},
 		{"wipe net n", []string{"net "}},
-		{"list ", []string{".", "display", "net"}},
 		{"list net ", nil},
-		{"emit ", []string{".", "display", "net"}},
+		{"list ", []string{"flat ", "ini ", "json ", ".", "display", "net"}},
+		{"list j", []string{"json "}},
+		{"list json ", []string{".", "display", "net"}},
+		{"list net ", nil},
 		{"ask n", []string{"name ", "nightly ", "net."}},
 		{"ask net.", []string{"net.host ", "net.port "}},
 		{"ask net.port ", []string{". ", "name ", "nightly ", "display.", "net."}},
@@ -195,7 +197,7 @@ func TestDelimiter(t *testing.T) {
 	if got := completedWords(line, head, cands); !reflect.DeepEqual(got, []string{"boot.description/keyboard.typ "}) {
 		t.Errorf("complete with /: got %q", cands)
 	}
-	_, cands, _ = r.complete("list ", len("list "))
+	_, cands, _ = r.complete("keys ", len("keys "))
 	if !reflect.DeepEqual(cands, []string{"/", "boot.description", "net"}) {
 		t.Errorf("list completion with /: got %q", cands)
 	}

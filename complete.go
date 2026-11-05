@@ -16,7 +16,7 @@ package main
 import "strings"
 
 var commands = []string{
-	"set", "get", "unset", "wipe", "copy", "move", "keys", "sections", "list", "emit",
+	"set", "get", "unset", "wipe", "copy", "move", "keys", "sections", "list", "export",
 	"check", "explain", "ask", "status", "changes", "path", "save", "revert", "history", "delim", "version", "help", "quit",
 }
 
@@ -94,8 +94,22 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 			head += settled
 		}
 
-	case "keys", "list", "emit":
+	case "keys":
 		if len(args) == 1 {
+			cands = sectionNames(r.view(), word, "")
+		}
+
+	case "list": // [FORMAT] [SECTION]
+		switch {
+		case len(args) == 1:
+			cands = withPrefix([]string{"flat", "ini", "json"}, word, " ")
+			for _, name := range sectionNames(r.view(), word, "") {
+				if listFormats[name] { // a section named like a format is written name.
+					name += r.ini.delim
+				}
+				cands = append(cands, name)
+			}
+		case len(args) == 2 && listFormats[args[1]]:
 			cands = sectionNames(r.view(), word, "")
 		}
 
