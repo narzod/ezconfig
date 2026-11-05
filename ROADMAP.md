@@ -19,6 +19,9 @@ Small, independent changes, each released as usual.
   `changes`, `wipe`, `copy`, `move` and `list`, as `explain` and `ask`
   already allow. Bare names keep working as now. The rule then has no
   exceptions: wherever a section goes, `name.` works.
+- **Place `docs/synopsis.md`** (the overview for engineers, kept there
+  for now): fold it into the README's opening with the next item, or
+  leave it as its own page. Update `emit` to `list json` in stage 2.
 - **"Why this design?" at the top of the README**: the two files and
   who owns each (the user's `config.ini`, the application's
   `schema.ini`, ezconfig combining them); why INI rather than TOML; and
