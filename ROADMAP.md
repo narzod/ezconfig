@@ -1,10 +1,13 @@
 # Roadmap
 
-What we've decided to build next, what's for later, and what we've set
-aside. Updated whenever a decision is made; each released version is a
-tag (`git tag`), and its commit message says what changed.
+What we've decided to build, in order, then what's for later, open for
+discussion, or set aside. Updated whenever a decision is made; each
+released version is a tag (`git tag`), and its commit message says what
+changed.
 
-## Next
+## Stage 1: on main, next
+
+Small, independent changes, each released as usual.
 
 - **Windows text files.** Accept a UTF-8 byte-order mark at the start of
   a config or schema (some Windows editors add one; today such a file
@@ -12,6 +15,61 @@ tag (`git tag`), and its commit message says what changed.
   file's line endings (CRLF or LF) on save; a new file gets the
   platform's. Recognise a UTF-16 file and say so plainly instead of
   reporting a syntax error.
+- **`name.` means a section in every command that takes one**: `keys`,
+  `changes`, `wipe`, `copy`, `move` and `list`, as `explain` and `ask`
+  already allow. Bare names keep working as now. The rule then has no
+  exceptions: wherever a section goes, `name.` works.
+- **"Why this design?" at the top of the README**: the two files and
+  who owns each (the user's `config.ini`, the application's
+  `schema.ini`, ezconfig combining them); why INI rather than TOML; and
+  that ezconfig ships with the application and is how people and
+  programs use the config, while the file stays plain INI anyone can
+  read, compare and keep.
+
+## Stage 2: on a branch, `list-formats`
+
+One breaking change, tried on a branch before it reaches main. Exes
+built from the branch report a pre-release version (`0.27.0-rc1`).
+Merged and tagged `v0.27.0` once tried; dropped if it doesn't work out.
+
+- **`list [FORMAT] [SECTION]`** prints the effective config as `flat`
+  (`KEY=VALUE` lines, the default), `ini` or `json`. If the first word is
+  a format it's the format, and what follows is the section; a section
+  named `flat`, `ini` or `json` is written `name.` (`list json json.`).
+- **`emit` goes away**: `list json` replaces it, with the same JSON, the
+  same exit codes (7 renamed root key, 2 refused) and the same colour in
+  the shell. Docs, man page, examples and the setup script change to
+  `list json`.
+- **`export [FILE]`** writes the JSON to a file, by default `config.json`
+  next to the config (named after it: `signage.ini` gives
+  `signage.json`). It is written atomically, says what it wrote, has the
+  same exit codes as `list json`, and refuses to write over the config or
+  the schema. JSON only: other formats go to a file by redirecting `list`
+  (`ezconfig list ini > effective.ini`). It is the exception for programs
+  that can't run ezconfig; reading `list json` is still the way programs
+  should read their settings.
+- **No options.** Formats are words, not `--format=`.
+
+## Stage 3: toward 1.0
+
+- **Freeze the contract** that projects depend on: command names, the
+  JSON shape, exit codes and the schema syntax. From 1.0 on, 1.x only
+  adds; a breaking change would be 2.0.
+- **Client helpers** in `clients/`: a short, tested `LoadConfig` for
+  Free Pascal, Go and Python (and PowerShell), each finding ezconfig next
+  to the program first, then on the PATH, checking `ezconfig version`
+  (1.0 or later), and reading `list json`.
+- **A licence file.** Open: which licence (MIT is the common short one).
+- **Publish on GitHub with releases**: one file per platform
+  (`ezconfig-windows-amd64.exe`, `ezconfig-linux-amd64`,
+  `ezconfig-linux-arm64` for Termux), each with its SHA-256.
+- **Install scripts** (`install.sh`, `install.ps1`) for operators: detect
+  the platform, verify the checksum, install without administrator
+  rights, safe to re-run, a version can be pinned. The manual route stays
+  documented beside them.
+- **How projects declare it**: a README "Requirements" line ("ezconfig
+  1.0 or later, next to the program or on the PATH"); clients get it in
+  the application's folder, operators on their PATH.
 
 ## Later
 
@@ -38,8 +96,15 @@ tag (`git tag`), and its commit message says what changed.
 - **`values=` on an int**: "a number, but only one of these", e.g. a
   rotation of 0, 90, 180 or 270. Today that is an enum, whose values are
   names.
-- **Typed JSON from `emit`** (numbers and true/false where the schema
-  says so). Decided against for now: `emit` stays strings. It is the
+- **More built-in types, a shortlist**: `list=yes` on any rule (a
+  comma-separated list, each item checked), `timerange` (07:00-22:00,
+  across midnight), `weekdays` (mon-fri,sun), `slug`, `path` and
+  `folder`, `resolution` (1920x1080, with common sizes on Tab),
+  `hostport`. Cheap whenever needed: `mac`, `uuid`, `geometry`, `version`,
+  `percent`, `cidr`, `country`, `currency`.
+- **Typed JSON from `emit`** (`list json` after stage 2: numbers and
+  true/false where the schema says so). Decided against for now: it
+  stays strings. It is the
   config in JSON's shape, the same shape with or without a schema and
   the same text `get` and `list` give; the schema has already checked and
   standardized each value, so the program's conversion can't fail. A
