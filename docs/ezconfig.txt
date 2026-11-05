@@ -134,7 +134,8 @@ ADDRESSING
        A key is name (a root key, before any section) or section.name.  The
        delimiter alone, ., means the root keys. Where a command takes a NAME,
        a bare name is the root key, and also the section of that name if there
-       is one; name. with the delimiter after it is only the section.
+       is one; name. with the delimiter after it is only the section, and
+       works wherever a command takes a section.
 
 SCHEMA
        A schema is itself an INI file. Its ordinary sections and root keys are
@@ -263,6 +264,11 @@ FILES
               A hidden folder next to the config holding its command history,
               only if history is turned on.
 
+       Configs and schemas are UTF-8 text; a byte-order mark and Windows line
+       endings (CRLF) are accepted and kept on save, and a new file gets the
+       platform's line endings. A UTF-16 file is refused with a message saying
+       how to save it as UTF-8.
+
        Comments in a config are kept when it is saved, with the key or section
        that follows them.
 
@@ -290,4 +296,4 @@ EXAMPLES
 SEE ALSO
        README.md and the examples folder in the ezconfig source.
 
-ezconfig 0.26.1                  November 2026                     EZCONFIG(1)
+ezconfig 0.26.2                  November 2026                     EZCONFIG(1)

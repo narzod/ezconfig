@@ -5,29 +5,15 @@ discussion, or set aside. Updated whenever a decision is made; each
 released version is a tag (`git tag`), and its commit message says what
 changed.
 
-## Stage 1: on main, next
+## Stage 1: on main (done in 0.26.2)
 
-Small, independent changes, each released as usual.
-
-- **Windows text files.** Accept a UTF-8 byte-order mark at the start of
-  a config or schema (some Windows editors add one; today such a file
-  fails with "line 1: expected key=value") and keep it on save. Keep the
-  file's line endings (CRLF or LF) on save; a new file gets the
-  platform's. Recognise a UTF-16 file and say so plainly instead of
-  reporting a syntax error.
-- **`name.` means a section in every command that takes one**: `keys`,
-  `changes`, `wipe`, `copy`, `move` and `list`, as `explain` and `ask`
-  already allow. Bare names keep working as now. The rule then has no
-  exceptions: wherever a section goes, `name.` works.
-- **Place `docs/synopsis.md`** (the overview for engineers, kept there
-  for now): fold it into the README's opening with the next item, or
-  leave it as its own page. Update `emit` to `list json` in stage 2.
-- **"Why this design?" at the top of the README**: the two files and
-  who owns each (the user's `config.ini`, the application's
-  `schema.ini`, ezconfig combining them); why INI rather than TOML; and
-  that ezconfig ships with the application and is how people and
-  programs use the config, while the file stays plain INI anyone can
-  read, compare and keep.
+- Windows text files: a UTF-8 byte-order mark and CRLF line endings are
+  read and kept; a new file gets the platform's line endings; a UTF-16
+  file is refused with a plain message (exit 2).
+- `name.` means a section in every command that takes one.
+- "Why this design?" at the top of the README, which also links
+  `docs/synopsis.md`. Open: whether the synopsis stays its own page or is
+  folded in; its `emit` becomes `list json` in stage 2.
 
 ## Stage 2: on a branch, `list-formats`
 

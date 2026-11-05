@@ -9,11 +9,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -47,12 +49,17 @@ type Ini struct {
 	// block at the very top followed by a blank line, and any at the end.
 	head, tail []string
 
+	// How the file is written: with a UTF-8 byte-order mark, and with
+	// CRLF line endings rather than LF. Both are kept from the file read.
+	bom, crlf bool
+
 	// delim separates section and key in an address ("net.port"); on its
 	// own it names the root (the keys before any section).
 	delim string
 }
 
-func NewIni() *Ini { return &Ini{delim: "."} }
+// NewIni is an empty config; saved, it gets the platform's line endings.
+func NewIni() *Ini { return &Ini{delim: ".", crlf: runtime.GOOS == "windows"} }
 
 // SyntaxError reports a line of the file that isn't valid INI.
 type SyntaxError struct {
@@ -60,22 +67,39 @@ type SyntaxError struct {
 	Msg  string
 }
 
-func (e *SyntaxError) Error() string { return fmt.Sprintf("line %d: %s", e.Line, e.Msg) }
+func (e *SyntaxError) Error() string {
+	if e.Line == 0 { // about the file as a whole
+		return e.Msg
+	}
+	return fmt.Sprintf("line %d: %s", e.Line, e.Msg)
+}
 
 // LoadIni reads path into a new Ini using delimiter sep.
 // A missing file yields an empty Ini.
 func LoadIni(path, sep string) (*Ini, error) {
 	ini := NewIni()
 	ini.delim = sep
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return ini, nil
+		return ini, nil // a new file gets the platform's line endings
 	}
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	return ini, ini.parse(f)
+	// Windows text files: a UTF-16 file can't be read as INI here, so say
+	// what it is rather than report a syntax error on line 1. A UTF-8
+	// byte-order mark is accepted and kept, and so are CRLF line endings.
+	if bytes.HasPrefix(data, []byte{0xFF, 0xFE}) || bytes.HasPrefix(data, []byte{0xFE, 0xFF}) ||
+		bytes.IndexByte(data[:min(len(data), 512)], 0) >= 0 {
+		return nil, &SyntaxError{0, "the file is saved as UTF-16 (\"Unicode\"), which ezconfig can't read; save it as UTF-8 instead (in Notepad: File, Save as, Encoding: UTF-8)"}
+	}
+	if rest, ok := bytes.CutPrefix(data, []byte{0xEF, 0xBB, 0xBF}); ok {
+		ini.bom, data = true, rest
+	}
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		ini.crlf = i > 0 && data[i-1] == '\r'
+	}
+	return ini, ini.parse(bytes.NewReader(data))
 }
 
 func (ini *Ini) parse(r io.Reader) error {
@@ -379,8 +403,17 @@ func (ini *Ini) Sections() []string {
 }
 
 // Save writes the Ini to path, root keys first, then each section.
+// Save writes the config atomically, keeping the file's byte-order mark
+// and line endings.
 func (ini *Ini) Save(path string) error {
-	return writeAtomic(path, []byte(ini.Text()))
+	text := ini.Text()
+	if ini.crlf {
+		text = strings.ReplaceAll(text, "\n", "\r\n")
+	}
+	if ini.bom {
+		text = "\uFEFF" + text
+	}
+	return writeAtomic(path, []byte(text))
 }
 
 // Text is the config as it is saved: comments kept with what follows

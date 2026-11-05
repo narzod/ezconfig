@@ -170,6 +170,10 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		return exitNotFound
 	}
 
+	if sectionCommands[cmd] {
+		args = sectionArgs(args, delim)
+	}
+
 	switch cmd {
 	case "ask": // reached only without a terminal; main runs it otherwise
 		return fail(exitArgs, "ask needs a terminal; use set KEY=VALUE in scripts")

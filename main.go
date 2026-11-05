@@ -256,6 +256,9 @@ func (r *Repl) exec(line string) bool {
 	cmd, rest, _ := strings.Cut(line, " ")
 	rest = strings.TrimSpace(rest)
 	args := strings.Fields(rest)
+	if sectionCommands[cmd] {
+		args = sectionArgs(args, r.ini.delim)
+	}
 
 	switch cmd {
 	case "set":
@@ -512,6 +515,25 @@ func (r *Repl) exec(line string) bool {
 		errorf("unknown command: %s (try help)", cmd)
 	}
 	return false
+}
+
+// sectionCommands take section names, so "name." works there as "name".
+var sectionCommands = map[string]bool{
+	"keys": true, "list": true, "emit": true, "changes": true, "wipe": true, "copy": true, "move": true,
+}
+
+// sectionArgs reads each "name." (a name with the delimiter after it) as
+// the section name, as explain and ask do. The delimiter alone (the root
+// keys) and bare names are left as they are.
+func sectionArgs(args []string, delim string) []string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		out[i] = a
+		if t, ok := strings.CutSuffix(a, delim); ok && t != "" && !strings.Contains(t, delim) {
+			out[i] = t
+		}
+	}
+	return out
 }
 
 // checkDelim rejects delimiters that can't be told apart from INI syntax

@@ -20,7 +20,7 @@ import (
 
 // Clone returns an independent copy of the Ini.
 func (ini *Ini) Clone() *Ini {
-	c := &Ini{delim: ini.delim, head: ini.head, tail: ini.tail}
+	c := &Ini{delim: ini.delim, head: ini.head, tail: ini.tail, bom: ini.bom, crlf: ini.crlf}
 	c.root.entries = append([]entry(nil), ini.root.entries...)
 	for _, s := range ini.sections {
 		c.sections = append(c.sections, &section{name: s.name, notes: s.notes,

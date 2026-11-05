@@ -242,3 +242,21 @@ func TestOneShotEmitDoubleClash(t *testing.T) {
 		t.Errorf("check [a=b]: %d", code)
 	}
 }
+
+func TestSectionDotForm(t *testing.T) {
+	dir := t.TempDir()
+	cfg := writeFile(t, dir, "config.ini", "name=a\n[net]\nport=1\n")
+	for _, args := range [][]string{{"list", "net."}, {"keys", "net."}, {"emit", "net."}} {
+		plain, _, _ := run(t, cfg, ".", args[0], "net")
+		code, out, errOut := run(t, cfg, ".", args[0], args[1:]...)
+		if code != 0 || plain != 0 || out == "" {
+			t.Errorf("%v: %d %q %q", args, code, out, errOut)
+		}
+	}
+	if got := sectionArgs([]string{"net.", ".", "net", "a.b.", "net.port"}, "."); strings.Join(got, " ") != "net . net a.b. net.port" {
+		t.Errorf("sectionArgs: %q", got)
+	}
+	if got := sectionArgs([]string{"net/", "net."}, "/"); strings.Join(got, " ") != "net net." {
+		t.Errorf("another delimiter: %q", got)
+	}
+}

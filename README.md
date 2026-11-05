@@ -14,6 +14,36 @@ the single source of truth for a config.
   convert). `man ./docs/ezconfig.1` (or `docs/ezconfig.txt`) has short
   examples for PowerShell, Python and Go under USING FROM PROGRAMS.
 
+For an overview written for engineers new to it, see
+[docs/synopsis.md](docs/synopsis.md).
+
+## Why this design?
+
+**Two files, two owners.** `config.ini` belongs to the user, or whoever
+sets up the machine, and holds only what they chose to change.
+`schema.ini` belongs to the application and holds its defaults and rules;
+it ships with each release and is replaced on upgrade. ezconfig combines
+them, so an upgrade brings new defaults without touching anyone's choices.
+The JSON programs read is that combined result, as `docker compose config`
+or `git config --list` show theirs.
+
+**Why INI, not TOML.** People edit the config, and INI reads the way they
+write: `name=lobby-east` and `debug=yes` are fine, where TOML wants quotes
+and lowercase `true`. The rules that matter (a port from 1 to 65535, a real
+date, a required key) live in the schema, which TOML's syntax can't express
+anyway; a bad value is set aside with a warning instead of making the whole
+file unreadable. Programs still get a strict format, JSON, from ezconfig.
+TOML is the better choice when programmers write the file and programs read
+it directly.
+
+**ezconfig ships with the application.** It is how both people and
+programs use the config: put it next to the application's executable (or
+on the PATH), as with any library the application needs. The config stays
+plain INI so anyone can read it, compare it and keep it with ordinary
+tools.
+
+## Using it
+
 An optional schema (`schema.ini` next to the config, or `-s FILE`) supplies
 defaults and rules. Its ordinary sections are defaults, shaped like a config;
 blocks starting with `@` describe the config:
