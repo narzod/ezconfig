@@ -14,11 +14,11 @@ BEGIN
     BLOCK "040904b0"
     BEGIN
       VALUE "FileDescription",  "ezconfig - read and change INI configs"
-      VALUE "FileVersion",      "0.27.0-rc1"
+      VALUE "FileVersion",      "0.27.0-rc2"
       VALUE "InternalName",     "ezconfig"
       VALUE "OriginalFilename", "ezconfig.exe"
       VALUE "ProductName",      "ezconfig"
-      VALUE "ProductVersion",   "0.27.0-rc1"
+      VALUE "ProductVersion",   "0.27.0-rc2"
     END
   END
   BLOCK "VarFileInfo"

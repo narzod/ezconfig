@@ -411,6 +411,9 @@ func (r *Repl) exec(line string) bool {
 			errorf("%v", err)
 			break
 		}
+		if note := formatClash(args, r.view()); note != "" {
+			warnf("%s", note)
+		}
 		l := render(r.view(), format, sec)
 		switch {
 		case !l.found:

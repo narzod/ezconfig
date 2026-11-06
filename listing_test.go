@@ -64,6 +64,18 @@ func TestOneShotListFormats(t *testing.T) {
 	if code, out, _ := run(t, cfg, ".", "list", "ini"); code != 0 || !strings.HasPrefix(out, "name=demo\n\n[json]\nx=1\n") {
 		t.Errorf("list ini: %d %q", code, out)
 	}
+	// A typed format word that is also a section's name gets a note on
+	// stderr; the JSON on stdout is untouched.
+	code, out, errOut := run(t, cfg, ".", "list", "json")
+	if code != 0 || !strings.HasPrefix(out, "{") || !strings.Contains(errOut, `"json" is read as the format; for the section named json, type list json.`) {
+		t.Errorf("list json with a [json] section: %d %q %q", code, out, errOut)
+	}
+	if _, _, errOut := run(t, cfg, ".", "list", "ini"); errOut != "" {
+		t.Errorf("no [ini] section, no note: %q", errOut)
+	}
+	if _, _, errOut := run(t, cfg, ".", "list", "json."); errOut != "" {
+		t.Errorf("the dotted form needs no note: %q", errOut)
+	}
 	if code, _, errOut := run(t, cfg, ".", "emit"); code != exitArgs || !strings.Contains(errOut, "emit is now list json") {
 		t.Errorf("emit: %d %q", code, errOut)
 	}

@@ -218,6 +218,9 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		if err != nil {
 			return fail(exitArgs, "%v", err)
 		}
+		if note := formatClash(args, view); note != "" {
+			fmt.Fprintln(stderr, "ezconfig: "+note) // stdout stays the data
+		}
 		l := render(view, format, sec)
 		switch {
 		case !l.found:

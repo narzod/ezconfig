@@ -40,6 +40,16 @@ func parseList(args []string, delim string) (format, sec string, err error) {
 	return format, sec, nil
 }
 
+// formatClash is a note for list when its first word was read as a
+// format but a section has that name too; "" when there's no doubt.
+func formatClash(args []string, view *Ini) string {
+	if len(args) == 0 || !listFormats[args[0]] || view.section(args[0]) == nil {
+		return ""
+	}
+	return fmt.Sprintf("note: %q is read as the format; for the section named %s, type list %s%s",
+		args[0], args[0], args[0], view.delim)
+}
+
 // listing is what list produces: the text, whether the section exists,
 // root keys json had to rename, and, for json, a config it can't represent.
 type listing struct {

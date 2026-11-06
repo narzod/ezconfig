@@ -110,8 +110,8 @@ refuses values that break a rule, `check` reports problems, and `-s none`
 shows the config exactly as written. `explain` covers every key the schema
 knows; `explain SECTION` one section; `explain KEY` one key in detail. A
 bare name is a root key, and also the section of that name if there is
-one; `NAME.` (with the delimiter) is only the section; `ask` reads names
-the same way. See `examples/`.
+one; `NAME.` (with the delimiter) is only the section, in every command
+that takes one, and Tab completion writes sections that way. See `examples/`.
 
 A root key and a section may share a name in INI, but not in one JSON
 object, so `list json` shows such a root key with `=` after its name

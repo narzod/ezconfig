@@ -28,6 +28,9 @@ once tried, or dropped if it doesn't work out.
   name with `.json`; never over the config or schema; exit codes as for
   `list json`; its message goes to standard error.
 - No options: formats are words.
+- rc2: Tab offers sections as `name.` in every command (the one spelling
+  that always means a section), and a typed `list json` notes it when a
+  `[json]` section exists too.
 
 ## Stage 3: toward 1.0
 

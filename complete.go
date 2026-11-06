@@ -48,11 +48,11 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 		head += settled
 
 	case "wipe":
-		cands = sectionNames(r.ini, word, " ")
+		cands = sectionNames(r.ini, word)
 
 	case "copy", "move":
 		if len(args) == 1 { // SRC only; DEST is a new name
-			cands = sectionNames(r.ini, word, " ")
+			cands = sectionNames(r.ini, word)
 		}
 
 	case "history":
@@ -96,26 +96,20 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 
 	case "keys":
 		if len(args) == 1 {
-			cands = sectionNames(r.view(), word, "")
+			cands = sectionNames(r.view(), word)
 		}
 
 	case "list": // [FORMAT] [SECTION]
 		switch {
 		case len(args) == 1:
-			cands = withPrefix([]string{"flat", "ini", "json"}, word, " ")
-			for _, name := range sectionNames(r.view(), word, "") {
-				if listFormats[name] { // a section named like a format is written name.
-					name += r.ini.delim
-				}
-				cands = append(cands, name)
-			}
+			cands = append(withPrefix([]string{"flat", "ini", "json"}, word, " "), sectionNames(r.view(), word)...)
 		case len(args) == 2 && listFormats[args[1]]:
-			cands = sectionNames(r.view(), word, "")
+			cands = sectionNames(r.view(), word)
 		}
 
 	case "changes":
 		if len(args) == 1 {
-			cands = sectionNames(r.ini, word, "")
+			cands = sectionNames(r.ini, word)
 		}
 
 	case "ask": // keys, and sections as "name." (any number of them)
@@ -129,14 +123,22 @@ func (r *Repl) complete(line string, pos int) (head string, cands []string, tail
 	return head, cands, tail
 }
 
-// sectionNames offers the root marker (the delimiter) first, then the
-// section names of ini, for commands that take a SECTION.
-func sectionNames(ini *Ini, word, suffix string) []string {
+// sectionNames offers, for commands that take a SECTION, the root marker
+// (the delimiter) and each section written "name." - the one spelling that
+// always means a section, so nothing completed here can be misread (list
+// json. is the section json, never the format).
+func sectionNames(ini *Ini, word string) []string {
+	d := ini.delim
 	var out []string
-	if strings.HasPrefix(ini.delim, word) {
-		out = append(out, ini.delim+suffix)
+	if strings.HasPrefix(d, word) {
+		out = append(out, d+" ")
 	}
-	return append(out, withPrefix(ini.Sections(), word, suffix)...)
+	for _, name := range sortedCopy(ini.Sections()) {
+		if strings.HasPrefix(name+d, word) {
+			out = append(out, name+d+" ")
+		}
+	}
+	return out
 }
 
 // keyPaths completes a key address. Without a delimiter it offers root

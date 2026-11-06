@@ -38,8 +38,8 @@ func TestComplete(t *testing.T) {
 		{"ex", []string{"explain ", "export "}},
 		{"w", []string{"wipe "}},
 		{"h", []string{"help ", "history "}},
-		{"copy ", []string{". ", "display ", "net "}},
-		{"copy n", []string{"net "}},
+		{"copy ", []string{". ", "display. ", "net. "}},
+		{"copy n", []string{"net. "}},
 		{"copy net ", nil},
 		{"history ", []string{"off", "on"}},
 		{"history o", []string{"off", "on"}},
@@ -53,29 +53,33 @@ func TestComplete(t *testing.T) {
 		{"set net.po", []string{"net.port="}},
 		{"set net.port=", []string{"net.port=8080"}},
 		{"set net.port=1 ", nil},
-		{"keys ", []string{".", "display", "net"}},
+		{"keys ", []string{". ", "display. ", "net. "}},
 		{"get .", nil},
-		{"keys d", []string{"display"}},
+		{"keys d", []string{"display. "}},
 		{"unset display.", []string{"display.width "}},
 		{"unset n", []string{"name ", "nightly ", "net."}},
-		{"wipe ", []string{". ", "display ", "net "}},
-		{"wipe net n", []string{"net "}},
+		{"wipe ", []string{". ", "display. ", "net. "}},
+		{"wipe net n", []string{"net. "}},
 		{"list net ", nil},
-		{"list ", []string{"flat ", "ini ", "json ", ".", "display", "net"}},
+		{"list n", []string{"net. "}},
+		{"keys net.", []string{"net. "}}, // the dot typed already
+		{"list ", []string{"flat ", "ini ", "json ", ". ", "display. ", "net. "}},
 		{"list j", []string{"json "}},
-		{"list json ", []string{".", "display", "net"}},
+		{"list json ", []string{". ", "display. ", "net. "}},
 		{"list net ", nil},
+		{"list n", []string{"net. "}},
+		{"keys net.", []string{"net. "}}, // the dot typed already
 		{"ask n", []string{"name ", "nightly ", "net."}},
 		{"ask net.", []string{"net.host ", "net.port "}},
 		{"ask net.port ", []string{". ", "name ", "nightly ", "display.", "net."}},
 		{"l", []string{"list "}},
 		{"c", []string{"changes ", "check ", "copy "}},
 		{"m", []string{"move "}},
-		{"move ", []string{". ", "display ", "net "}},
+		{"move ", []string{". ", "display. ", "net. "}},
 		{"move net ", nil},
 		{"ch", []string{"changes ", "check "}},
 		{"cha", []string{"changes "}},
-		{"changes ", []string{".", "display", "net"}},
+		{"changes ", []string{". ", "display. ", "net. "}},
 		{"j", nil},
 		{"status ", nil},
 		{"sections ", nil},
@@ -198,7 +202,7 @@ func TestDelimiter(t *testing.T) {
 		t.Errorf("complete with /: got %q", cands)
 	}
 	_, cands, _ = r.complete("keys ", len("keys "))
-	if !reflect.DeepEqual(cands, []string{"/", "boot.description", "net"}) {
+	if !reflect.DeepEqual(cands, []string{"/ ", "boot.description/ ", "net/ "}) {
 		t.Errorf("list completion with /: got %q", cands)
 	}
 	if n := ini.NamesContaining("."); n != 3 {
