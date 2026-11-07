@@ -15,10 +15,9 @@ changed.
   `docs/synopsis.md`. Open: whether the synopsis stays its own page or is
   folded in (it now says `list json`).
 
-## Stage 2: on a branch, `list-formats` (built as 0.27.0-rc1)
+## Stage 2: on main (done in 0.27.0)
 
-Tried on the branch before it reaches main; merged and tagged `v0.27.0`
-once tried, or dropped if it doesn't work out.
+Tried on the `list-formats` branch (0.27.0-rc1 to rc3), then merged.
 
 - `list [FORMAT] [SECTION]`: `flat` (default), `ini` or `json`; a format
   word comes first; a section named like a format is written `name.`.
@@ -43,11 +42,10 @@ once tried, or dropped if it doesn't work out.
   Free Pascal, Go and Python (and PowerShell), each finding ezconfig next
   to the program first, then on the PATH, checking `ezconfig version`
   (1.0 or later), and reading `list json`.
-- **Push the version tags to GitHub** (v0.15.0 to v0.27.0-rc3). They are
-  in Jeff's WSL clone (fetched from `ezconfig-tags.bundle`) and need one
-  `git push origin --tags` from there once GitHub sign-in works on that
-  machine; Claude's workspace can push branches but not tags. Needed
-  before GitHub releases and `go install ...@v1.0.0`.
+- **Tags come from GitHub releases.** From v0.27.0 on, each version is
+  tagged when its release is made on the web page (Releases, Draft a new
+  release, tag `vX.Y.Z` on `main`). The tags before it were not pushed;
+  each commit message starts with its version instead.
 - **A licence file.** Open: which licence (MIT is the common short one).
 - **Publish on GitHub with releases**: one file per platform
   (`ezconfig-windows-amd64.exe`, `ezconfig-linux-amd64`,
