@@ -16,7 +16,8 @@ the single source of truth for a config.
   Go under USING FROM PROGRAMS.
 - `ezconfig export` writes that JSON to a file (by default `config.json`
   next to `config.ini`), for a program that can't run ezconfig. It's a
-  snapshot: export again after the config or schema changes.
+  snapshot of the saved config (the shell refuses to export unsaved
+  changes): export again after the config or schema changes.
 
 For an overview written for engineers new to it, see
 [docs/synopsis.md](docs/synopsis.md).

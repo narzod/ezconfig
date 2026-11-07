@@ -110,7 +110,8 @@ next to it
 gives
 .BR config.json ).
 It is written atomically, never over the config or the schema, and says
-what it wrote. For a program that can't run ezconfig; reading
+what it wrote. It exports the saved config: in the shell it refuses while
+there are unsaved changes, so the file always matches the config. For a program that can't run ezconfig; reading
 .B list json
 remains the way programs should read their settings.
 .TP

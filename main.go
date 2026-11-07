@@ -433,6 +433,13 @@ func (r *Repl) exec(line string) bool {
 			errorf("usage: export [FILE]")
 			break
 		}
+		// An export is a published copy of the config, so it matches what is
+		// saved: never edits that might yet be reverted.
+		if n := r.unsaved(); n > 0 {
+			errorf("export: %s; save first (or revert), so the export matches %s",
+				plural(n, "unsaved change"), filepath.Base(r.path))
+			break
+		}
 		var schemaPath string
 		if r.schema != nil {
 			schemaPath = r.schema.path
@@ -447,11 +454,7 @@ func (r *Repl) exec(line string) bool {
 		for _, k := range renamed {
 			warnf("%s", renameNote(k))
 		}
-		note := exportNote(r.view(), target)
-		if n := r.unsaved(); n > 0 {
-			note += fmt.Sprintf(" (including %s)", plural(n, "unsaved change"))
-		}
-		fmt.Println(note)
+		fmt.Println(exportNote(r.view(), target))
 
 	case "check":
 		if len(args) > 0 {
