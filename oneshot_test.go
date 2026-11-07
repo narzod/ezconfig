@@ -58,10 +58,15 @@ func TestOneShotRead(t *testing.T) {
 		{"list", []string{"."}, 0, "name=demo\nnightly=true\n"},
 		{"list", []string{"nope"}, 5, ""},
 		{"list", []string{"a", "b"}, 4, ""},
-		{"emit", nil, 0, "{\n  \"name\": \"demo\","},
-		{"emit", []string{"net"}, 0, "{\n  \"host\": \"localhost\",\n  \"port\": \"8080\"\n}\n"},
-		{"emit", []string{"."}, 0, "{\n  \"name\": \"demo\",\n  \"nightly\": \"true\"\n}\n"},
-		{"emit", []string{"nope"}, 5, ""},
+		{"list", []string{"json"}, 0, "{\n  \"name\": \"demo\","},
+		{"list", []string{"json", "net"}, 0, "{\n  \"host\": \"localhost\",\n  \"port\": \"8080\"\n}\n"},
+		{"list", []string{"json", "."}, 0, "{\n  \"name\": \"demo\",\n  \"nightly\": \"true\"\n}\n"},
+		{"list", []string{"json", "nope"}, 5, ""},
+		{"list", []string{"ini", "net"}, 0, "[net]\nhost=localhost\nport=8080\n"},
+		{"list", []string{"ini", "."}, 0, "name=demo\nnightly=true\n"},
+		{"list", []string{"flat", "net"}, 0, "net.host=localhost\nnet.port=8080\n"},
+		{"list", []string{"json", "net", "x"}, 4, ""},
+		{"emit", nil, 4, ""}, // replaced by list json
 		{"json", nil, 4, ""},
 		{"wipe", []string{"net"}, 4, ""},
 		{"move", []string{"net", "web"}, 4, ""},
@@ -194,7 +199,7 @@ func TestParseArgs(t *testing.T) {
 func TestOneShotEmitClash(t *testing.T) {
 	dir := t.TempDir()
 	cfg := writeFile(t, dir, "config.ini", "net=wired\n[net]\nport=8080\n")
-	code, out, errOut := run(t, cfg, ".", "emit")
+	code, out, errOut := run(t, cfg, ".", "list", "json")
 	if code != exitRenamed || !strings.Contains(out, `"net=": "wired"`) ||
 		!strings.Contains(errOut, `root key "net" is shown as "net=" because [net] is a section`) {
 		t.Errorf("emit: %d\n%s\n%s", code, out, errOut)
@@ -202,7 +207,7 @@ func TestOneShotEmitClash(t *testing.T) {
 	if strings.Contains(errOut, "dump") {
 		t.Errorf("old name in message: %s", errOut)
 	}
-	if code, _, _ := run(t, cfg, ".", "emit", "net"); code != 0 {
+	if code, _, _ := run(t, cfg, ".", "list", "json", "net"); code != 0 {
 		t.Errorf("emit net: %d", code)
 	}
 	// A section that only the schema's defaults have clashes too, as emit sees it.
@@ -221,12 +226,12 @@ func TestOneShotEmitClash(t *testing.T) {
 func TestOneShotEmitDoubleClash(t *testing.T) {
 	dir := t.TempDir()
 	cfg := writeFile(t, dir, "config.ini", "net=wired\n[net]\nport=1\n[net=]\nbackup=yes\n")
-	code, out, errOut := run(t, cfg, ".", "emit")
+	code, out, errOut := run(t, cfg, ".", "list", "json")
 	if code != exitSyntax || out != "" || !strings.Contains(errOut, `but [net=] is also a section`) {
 		t.Errorf("emit: %d %q %q", code, out, errOut)
 	}
 	// The parts still come out on their own.
-	if code, out, _ := run(t, cfg, ".", "emit", "net="); code != 0 || !strings.Contains(out, `"backup": "yes"`) {
+	if code, out, _ := run(t, cfg, ".", "list", "json", "net="); code != 0 || !strings.Contains(out, `"backup": "yes"`) {
 		t.Errorf("emit net=: %d %q", code, out)
 	}
 	code, out, _ = run(t, cfg, ".", "check")
@@ -235,7 +240,7 @@ func TestOneShotEmitDoubleClash(t *testing.T) {
 	}
 	// A section with "=" on its own still emits; check still points it out.
 	cfg2 := writeFile(t, dir, "two.ini", "[a=b]\nx=1\n")
-	if code, out, _ := run(t, cfg2, ".", "emit"); code != 0 || !strings.Contains(out, `"a=b": {`) {
+	if code, out, _ := run(t, cfg2, ".", "list", "json"); code != 0 || !strings.Contains(out, `"a=b": {`) {
 		t.Errorf("emit [a=b]: %d %q", code, out)
 	}
 	if code, _, _ := run(t, cfg2, ".", "check"); code != exitInvalid {
@@ -246,9 +251,12 @@ func TestOneShotEmitDoubleClash(t *testing.T) {
 func TestSectionDotForm(t *testing.T) {
 	dir := t.TempDir()
 	cfg := writeFile(t, dir, "config.ini", "name=a\n[net]\nport=1\n")
-	for _, args := range [][]string{{"list", "net."}, {"keys", "net."}, {"emit", "net."}} {
+	for _, args := range [][]string{{"list", "net."}, {"keys", "net."}, {"list", "json", "net."}} {
 		plain, _, _ := run(t, cfg, ".", args[0], "net")
 		code, out, errOut := run(t, cfg, ".", args[0], args[1:]...)
+		if len(args) == 3 { // list json net.: compare with list json net
+			plain, _, _ = run(t, cfg, ".", "list", "json", "net")
+		}
 		if code != 0 || plain != 0 || out == "" {
 			t.Errorf("%v: %d %q %q", args, code, out, errOut)
 		}

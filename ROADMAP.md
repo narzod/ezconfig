@@ -13,31 +13,25 @@ changed.
 - `name.` means a section in every command that takes one.
 - "Why this design?" at the top of the README, which also links
   `docs/synopsis.md`. Open: whether the synopsis stays its own page or is
-  folded in; its `emit` becomes `list json` in stage 2.
+  folded in (it now says `list json`).
 
-## Stage 2: on a branch, `list-formats`
+## Stage 2: on main (done in 0.27.0)
 
-One breaking change, tried on a branch before it reaches main. Exes
-built from the branch report a pre-release version (`0.27.0-rc1`).
-Merged and tagged `v0.27.0` once tried; dropped if it doesn't work out.
+Tried on the `list-formats` branch (0.27.0-rc1 to rc3), then merged.
 
-- **`list [FORMAT] [SECTION]`** prints the effective config as `flat`
-  (`KEY=VALUE` lines, the default), `ini` or `json`. If the first word is
-  a format it's the format, and what follows is the section; a section
-  named `flat`, `ini` or `json` is written `name.` (`list json json.`).
-- **`emit` goes away**: `list json` replaces it, with the same JSON, the
-  same exit codes (7 renamed root key, 2 refused) and the same colour in
-  the shell. Docs, man page, examples and the setup script change to
-  `list json`.
-- **`export [FILE]`** writes the JSON to a file, by default `config.json`
-  next to the config (named after it: `signage.ini` gives
-  `signage.json`). It is written atomically, says what it wrote, has the
-  same exit codes as `list json`, and refuses to write over the config or
-  the schema. JSON only: other formats go to a file by redirecting `list`
-  (`ezconfig list ini > effective.ini`). It is the exception for programs
-  that can't run ezconfig; reading `list json` is still the way programs
-  should read their settings.
-- **No options.** Formats are words, not `--format=`.
+- `list [FORMAT] [SECTION]`: `flat` (default), `ini` or `json`; a format
+  word comes first; a section named like a format is written `name.`.
+- `emit` is gone; `list json` replaces it with the same JSON, exit codes
+  and colour, and `ezconfig emit` says so.
+- `export [FILE]` writes the JSON, atomically, by default to the config's
+  name with `.json`; never over the config or schema; exit codes as for
+  `list json`; its message goes to standard error.
+- No options: formats are words.
+- rc3: `export` publishes the saved config only; in the shell it refuses
+  while there are unsaved changes ("save first, or revert").
+- rc2: Tab offers sections as `name.` in every command (the one spelling
+  that always means a section), and a typed `list json` notes it when a
+  `[json]` section exists too.
 
 ## Stage 3: toward 1.0
 
@@ -48,6 +42,10 @@ Merged and tagged `v0.27.0` once tried; dropped if it doesn't work out.
   Free Pascal, Go and Python (and PowerShell), each finding ezconfig next
   to the program first, then on the PATH, checking `ezconfig version`
   (1.0 or later), and reading `list json`.
+- **Tags come from GitHub releases.** From v0.27.0 on, each version is
+  tagged when its release is made on the web page (Releases, Draft a new
+  release, tag `vX.Y.Z` on `main`). The tags before it were not pushed;
+  each commit message starts with its version instead.
 - **A licence file.** Open: which licence (MIT is the common short one).
 - **Publish on GitHub with releases**: one file per platform
   (`ezconfig-windows-amd64.exe`, `ezconfig-linux-amd64`,
@@ -91,14 +89,19 @@ Merged and tagged `v0.27.0` once tried; dropped if it doesn't work out.
   `folder`, `resolution` (1920x1080, with common sizes on Tab),
   `hostport`. Cheap whenever needed: `mac`, `uuid`, `geometry`, `version`,
   `percent`, `cidr`, `country`, `currency`.
-- **Typed JSON from `emit`** (`list json` after stage 2: numbers and
+- **Typed JSON from `list json`** (numbers and
   true/false where the schema says so). Decided against for now: it
   stays strings. It is the
   config in JSON's shape, the same shape with or without a schema and
   the same text `get` and `list` give; the schema has already checked and
   standardized each value, so the program's conversion can't fail. A
-  typed form would also need a flag (`emit --typed`, failing without a
+  typed form would also need a flag (`list json --typed`, failing without a
   schema), the first option belonging to one command.
+
+- **Tab completion for `ask`.** It offers keys and sections as `name.`,
+  like `explain`, including sections with no rules, which `ask` then
+  refuses. Jeff has a view on this to come back to; nothing changes until
+  then.
 
 ## Set aside
 
@@ -117,21 +120,22 @@ Merged and tagged `v0.27.0` once tried; dropped if it doesn't work out.
   never ask; `ask` is the one command for people, in the shell too. `ask
   KEY` asks one question and ends with the same review, so a consultant
   on the phone or a setup script can use it.
-- **Metadata in `emit`'s JSON** (a `_meta` member describing renames) and
-  **refusing to emit** when a root key and a section share a name. Instead
-  `emit` shows the root key as `NAME=` (no INI key can contain `=`, so it
+- **Metadata in the JSON** of `list json` (formerly `emit`), a `_meta`
+  member describing renames, and **refusing to produce JSON** when a root
+  key and a section share a name. Instead
+  `list json` shows the root key as `NAME=` (no INI key can contain `=`, so it
   can't collide), warns on stderr and exits 7; a program that checks the
   code can read it, and one that doesn't expect it stops on the non-zero
   status. A reserved name such as `""`, `default` or `_meta` would only
   bring its own clashes.
 - **One set of names for root keys and sections.** INI allows the same
-  name for both; ezconfig keeps that freedom and handles it in `emit`.
+  name for both; ezconfig keeps that freedom and handles it in `list json`.
 
 ## Notes
 
 - **Colour, git-style.** Only on a terminal, only in the shell and `ask`,
   only on what the text already marks (`+ - ~`, errors, notes, headings,
-  keys in shell `list` and `emit`), never on one-shot data; `NO_COLOR` and `TERM=dumb` turn it off. These are the
+  keys in shell `list`, JSON as jq colours it), never on one-shot data; `NO_COLOR` and `TERM=dumb` turn it off. These are the
   only environment variables ezconfig reads, because they are shared
   conventions rather than settings of its own.
 - **The shell collects changes; the command line completes them.** In

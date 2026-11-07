@@ -1,4 +1,4 @@
-.TH EZCONFIG 1 "November 2026" "ezconfig 0.26.2" "User Commands"
+.TH EZCONFIG 1 "November 2026" "ezconfig 0.27.0" "User Commands"
 .nh
 .ad l
 .SH NAME
@@ -80,14 +80,40 @@ List key addresses, for everything or one section.
 .B sections
 List section names.
 .TP
-.BR list " [\fISECTION\fR]"
-Print
+.BR list " [\fIFORMAT\fR] [\fISECTION\fR]"
+Print the effective config, for everything or one section, in one of
+three formats:
+.B flat
+(the default),
 .I KEY=VALUE
-lines, for everything or one section.
+lines;
+.BR ini ,
+sections and keys as INI, without the file's comments; or
+.BR json ,
+for programs: root keys at the top level, each section an object, every
+value a string. If the first word is a format it is the format, and what
+follows is the section; a section named
+.BR flat ,
+.B ini
+or
+.B json
+is written with the delimiter after it
+.RB ( "list json json." ).
 .TP
-.BR emit " [\fISECTION\fR]"
-Print everything, or one section, as JSON for programs: root keys at the
-top level, each section an object, every value a string.
+.BR export " [\fIFILE\fR]"
+Write the JSON of
+.B list json
+to a file: by default the config's name with
+.BR .json ,
+next to it
+.RB ( config.ini
+gives
+.BR config.json ).
+It is written atomically, never over the config or the schema, and says
+what it wrote. It exports the saved config: in the shell it refuses while
+there are unsaved changes, so the file always matches the config. For a program that can't run ezconfig; reading
+.B list json
+remains the way programs should read their settings.
 .TP
 .B check
 Report problems: values that break the schema, required keys with no
@@ -182,7 +208,7 @@ a bare name is the root key, and also the section of that name if there
 is one;
 .I name.\&
 with the delimiter after it is only the section, and works wherever a
-command takes a section.
+command takes a section; Tab completion writes sections that way.
 .SH SCHEMA
 A schema is itself an INI file. Its ordinary sections and root keys are
 defaults, shaped like the config. Blocks whose names start with
@@ -240,7 +266,7 @@ shows the config as written.
 A program reads its settings with one call:
 .PP
 .RS
-.B ezconfig emit
+.B ezconfig list json
 .RE
 .PP
 The output is the whole config as a JSON object, ready for any JSON
@@ -262,17 +288,23 @@ maps of strings) rather than a typed structure.
 Check the exit status: 0 means the JSON is complete; 7 means it is
 complete but a root key was renamed (see EXIT STATUS); anything else
 means stop. Warnings go to standard error, never into the JSON.
-.B emit
+.B list json
 .I SECTION
 gives one section on its own. A program that doesn't run in the
 config's folder names it:
-.BR "ezconfig \-c " "\fIC:\eSignLoop\econfig.ini\fR " emit .
+.BR "ezconfig \-c " "\fIC:\eSignLoop\econfig.ini\fR " "list json" .
+A program that can't run another program at all can read a file written
+by
+.B export
+instead; it is a snapshot, so run
+.B export
+again after the config or schema changes.
 .PP
 PowerShell:
 .PP
 .RS
 .nf
-$c = ezconfig emit | ConvertFrom\-Json
+$c = ezconfig list json | ConvertFrom\-Json
 $port = [int]$c.net.port
 .fi
 .RE
@@ -281,7 +313,7 @@ Python:
 .PP
 .RS
 .nf
-out = subprocess.run(["ezconfig", "emit"],
+out = subprocess.run(["ezconfig", "list", "json"],
                      capture_output=True, text=True)
 if out.returncode not in (0, 7):
     raise SystemExit(out.stderr)
@@ -294,10 +326,10 @@ Go:
 .PP
 .RS
 .nf
-cmd := exec.Command("ezconfig", "emit")
+cmd := exec.Command("ezconfig", "list", "json")
 out, _ := cmd.Output()
 if code := cmd.ProcessState.ExitCode(); code != 0 && code != 7 {
-    log.Fatal("ezconfig emit failed")
+    log.Fatal("ezconfig list json failed")
 }
 var c map[string]any
 json.Unmarshal(out, &c)
@@ -321,7 +353,9 @@ found a problem).
 .TP
 .B 2
 Syntax error in the config or schema, or
-.B emit
+.B "list json"
+or
+.B export
 refused a config it can't represent as JSON (a renamed root key would
 take a section's name).
 .TP
@@ -339,7 +373,9 @@ Key or section not found.
 stopped or quit; nothing saved.
 .TP
 .B 7
-.B emit
+.B "list json"
+or
+.B export
 renamed a root key that shares its name with a section. The output is
 complete; the key is shown as
 .IR NAME= ,
@@ -351,8 +387,8 @@ a little colour marks what the text already says, as git does: added
 lines green, removed lines red and changed lines yellow; errors red;
 notes and warnings yellow; section headings bold. In the shell,
 .B list
-shows keys in cyan, and
-.B emit
+shows keys in cyan (and INI section headers in bold), and
+.B "list json"
 colours JSON as jq does: keys cyan, string values green. Colour is used
 only when the output is a terminal, so anything piped or redirected is
 plain, and one-shot commands that print data never use it.
@@ -401,7 +437,7 @@ Set two values and save:
 Give a program the whole config, as JSON:
 .PP
 .RS
-.B ezconfig emit > settings.json
+.B ezconfig list json > settings.json
 .RE
 .PP
 Check a config before deploying it:

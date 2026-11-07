@@ -29,17 +29,17 @@ func TestComplete(t *testing.T) {
 		line string
 		want []string
 	}{
-		{"", []string{"ask ", "changes ", "check ", "copy ", "delim ", "emit ", "explain ", "get ", "help ", "history ", "keys ", "list ", "move ", "path ", "quit ",
+		{"", []string{"ask ", "changes ", "check ", "copy ", "delim ", "explain ", "export ", "get ", "help ", "history ", "keys ", "list ", "move ", "path ", "quit ",
 			"revert ", "save ", "sections ", "set ", "status ", "unset ", "version ", "wipe "}},
 		{"se", []string{"sections ", "set "}}, // ask no longer clashes with set
 		{"delim ", []string{"/", ":", "|"}},
 		{"d", []string{"delim "}},
-		{"e", []string{"emit ", "explain "}},
-		{"em", []string{"emit "}},
+		{"e", []string{"explain ", "export "}},
+		{"ex", []string{"explain ", "export "}},
 		{"w", []string{"wipe "}},
 		{"h", []string{"help ", "history "}},
-		{"copy ", []string{". ", "display ", "net "}},
-		{"copy n", []string{"net "}},
+		{"copy ", []string{". ", "display. ", "net. "}},
+		{"copy n", []string{"net. "}},
 		{"copy net ", nil},
 		{"history ", []string{"off", "on"}},
 		{"history o", []string{"off", "on"}},
@@ -53,27 +53,33 @@ func TestComplete(t *testing.T) {
 		{"set net.po", []string{"net.port="}},
 		{"set net.port=", []string{"net.port=8080"}},
 		{"set net.port=1 ", nil},
-		{"keys ", []string{".", "display", "net"}},
+		{"keys ", []string{". ", "display. ", "net. "}},
 		{"get .", nil},
-		{"keys d", []string{"display"}},
+		{"keys d", []string{"display. "}},
 		{"unset display.", []string{"display.width "}},
 		{"unset n", []string{"name ", "nightly ", "net."}},
-		{"wipe ", []string{". ", "display ", "net "}},
-		{"wipe net n", []string{"net "}},
-		{"list ", []string{".", "display", "net"}},
+		{"wipe ", []string{". ", "display. ", "net. "}},
+		{"wipe net n", []string{"net. "}},
 		{"list net ", nil},
-		{"emit ", []string{".", "display", "net"}},
+		{"list n", []string{"net. "}},
+		{"keys net.", []string{"net. "}}, // the dot typed already
+		{"list ", []string{"flat ", "ini ", "json ", ". ", "display. ", "net. "}},
+		{"list j", []string{"json "}},
+		{"list json ", []string{". ", "display. ", "net. "}},
+		{"list net ", nil},
+		{"list n", []string{"net. "}},
+		{"keys net.", []string{"net. "}}, // the dot typed already
 		{"ask n", []string{"name ", "nightly ", "net."}},
 		{"ask net.", []string{"net.host ", "net.port "}},
 		{"ask net.port ", []string{". ", "name ", "nightly ", "display.", "net."}},
 		{"l", []string{"list "}},
 		{"c", []string{"changes ", "check ", "copy "}},
 		{"m", []string{"move "}},
-		{"move ", []string{". ", "display ", "net "}},
+		{"move ", []string{". ", "display. ", "net. "}},
 		{"move net ", nil},
 		{"ch", []string{"changes ", "check "}},
 		{"cha", []string{"changes "}},
-		{"changes ", []string{".", "display", "net"}},
+		{"changes ", []string{". ", "display. ", "net. "}},
 		{"j", nil},
 		{"status ", nil},
 		{"sections ", nil},
@@ -195,8 +201,8 @@ func TestDelimiter(t *testing.T) {
 	if got := completedWords(line, head, cands); !reflect.DeepEqual(got, []string{"boot.description/keyboard.typ "}) {
 		t.Errorf("complete with /: got %q", cands)
 	}
-	_, cands, _ = r.complete("list ", len("list "))
-	if !reflect.DeepEqual(cands, []string{"/", "boot.description", "net"}) {
+	_, cands, _ = r.complete("keys ", len("keys "))
+	if !reflect.DeepEqual(cands, []string{"/ ", "boot.description/ ", "net/ "}) {
 		t.Errorf("list completion with /: got %q", cands)
 	}
 	if n := ini.NamesContaining("."); n != 3 {

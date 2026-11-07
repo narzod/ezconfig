@@ -61,13 +61,25 @@ COMMANDS
        sections
               List section names.
 
-       list [SECTION]
-              Print KEY=VALUE lines, for everything or one section.
+       list [FORMAT] [SECTION]
+              Print the effective config, for everything or one section, in
+              one of three formats: flat (the default), KEY=VALUE lines; ini,
+              sections and keys as INI, without the file's comments; or json,
+              for programs: root keys at the top level, each section an
+              object, every value a string. If the first word is a format it
+              is the format, and what follows is the section; a section named
+              flat, ini or json is written with the delimiter after it (list
+              json json.).
 
-       emit [SECTION]
-              Print everything, or one section, as JSON for programs: root
-              keys at the top level, each section an object, every value a
-              string.
+       export [FILE]
+              Write the JSON of list json to a file: by default the config's
+              name with .json, next to it (config.ini gives config.json).  It
+              is written atomically, never over the config or the schema, and
+              says what it wrote. It exports the saved config: in the shell it
+              refuses while there are unsaved changes, so the file always
+              matches the config. For a program that can't run ezconfig;
+              reading list json remains the way programs should read their
+              settings.
 
        check  Report problems: values that break the schema, required keys
               with no value, root keys that share their name with a section,
@@ -135,7 +147,8 @@ ADDRESSING
        delimiter alone, ., means the root keys. Where a command takes a NAME,
        a bare name is the root key, and also the section of that name if there
        is one; name. with the delimiter after it is only the section, and
-       works wherever a command takes a section.
+       works wherever a command takes a section; Tab completion writes
+       sections that way.
 
 SCHEMA
        A schema is itself an INI file. Its ordinary sections and root keys are
@@ -166,7 +179,7 @@ SCHEMA
 USING FROM PROGRAMS
        A program reads its settings with one call:
 
-              ezconfig emit
+              ezconfig list json
 
        The output is the whole config as a JSON object, ready for any JSON
        library: root keys at the top level, each section an object of its own.
@@ -183,18 +196,21 @@ USING FROM PROGRAMS
 
        Check the exit status: 0 means the JSON is complete; 7 means it is
        complete but a root key was renamed (see EXIT STATUS); anything else
-       means stop. Warnings go to standard error, never into the JSON.  emit
-       SECTION gives one section on its own. A program that doesn't run in the
-       config's folder names it: ezconfig -c C:\SignLoop\config.ini emit.
+       means stop. Warnings go to standard error, never into the JSON.  list
+       json SECTION gives one section on its own. A program that doesn't run
+       in the config's folder names it: ezconfig -c C:\SignLoop\config.ini
+       list json.  A program that can't run another program at all can read a
+       file written by export instead; it is a snapshot, so run export again
+       after the config or schema changes.
 
        PowerShell:
 
-              $c = ezconfig emit | ConvertFrom-Json
+              $c = ezconfig list json | ConvertFrom-Json
               $port = [int]$c.net.port
 
        Python:
 
-              out = subprocess.run(["ezconfig", "emit"],
+              out = subprocess.run(["ezconfig", "list", "json"],
                                    capture_output=True, text=True)
               if out.returncode not in (0, 7):
                   raise SystemExit(out.stderr)
@@ -203,10 +219,10 @@ USING FROM PROGRAMS
 
        Go:
 
-              cmd := exec.Command("ezconfig", "emit")
+              cmd := exec.Command("ezconfig", "list", "json")
               out, _ := cmd.Output()
               if code := cmd.ProcessState.ExitCode(); code != 0 && code != 7 {
-                  log.Fatal("ezconfig emit failed")
+                  log.Fatal("ezconfig list json failed")
               }
               var c map[string]any
               json.Unmarshal(out, &c)
@@ -221,9 +237,9 @@ EXIT STATUS
 
        1      A value breaks the schema (or check found a problem).
 
-       2      Syntax error in the config or schema, or emit refused a config
-              it can't represent as JSON (a renamed root key would take a
-              section's name).
+       2      Syntax error in the config or schema, or list json or export
+              refused a config it can't represent as JSON (a renamed root key
+              would take a section's name).
 
        3      Config or schema missing or unreadable.
 
@@ -233,18 +249,19 @@ EXIT STATUS
 
        6      ask stopped or quit; nothing saved.
 
-       7      emit renamed a root key that shares its name with a section. The
-              output is complete; the key is shown as NAME=, which no INI key
-              can contain.
+       7      list json or export renamed a root key that shares its name with
+              a section. The output is complete; the key is shown as NAME=,
+              which no INI key can contain.
 
 COLOR
        In the shell and in ask, a little colour marks what the text already
        says, as git does: added lines green, removed lines red and changed
        lines yellow; errors red; notes and warnings yellow; section headings
-       bold. In the shell, list shows keys in cyan, and emit colours JSON as
-       jq does: keys cyan, string values green. Colour is used only when the
-       output is a terminal, so anything piped or redirected is plain, and
-       one-shot commands that print data never use it.
+       bold. In the shell, list shows keys in cyan (and INI section headers in
+       bold), and list json colours JSON as jq does: keys cyan, string values
+       green. Colour is used only when the output is a terminal, so anything
+       piped or redirected is plain, and one-shot commands that print data
+       never use it.
 
 ENVIRONMENT
        NO_COLOR
@@ -283,7 +300,7 @@ EXAMPLES
 
        Give a program the whole config, as JSON:
 
-              ezconfig emit > settings.json
+              ezconfig list json > settings.json
 
        Check a config before deploying it:
 
@@ -296,4 +313,4 @@ EXAMPLES
 SEE ALSO
        README.md and the examples folder in the ezconfig source.
 
-ezconfig 0.26.2                  November 2026                     EZCONFIG(1)
+ezconfig 0.27.0                  November 2026                     EZCONFIG(1)

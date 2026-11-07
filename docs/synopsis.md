@@ -1,6 +1,6 @@
 # ezconfig: a synopsis for engineers
 
-November 2026; describes ezconfig 0.26.1. Kept here until it finds a
+November 2026; describes ezconfig 0.27.0. Kept here until it finds a
 home in the README or elsewhere; the original is a shared doc.
 
 ## What it is
@@ -17,7 +17,7 @@ The same two files carry a project from its first sketch to a product with clien
 
 ## How programs use it
 
-Programs don't parse INI themselves; they call ezconfig. `ezconfig emit` prints the whole merged config as JSON, with defaults filled in, invalid values left out and every value in standard spelling, and `ezconfig get net.port` prints single values. Data goes to standard output, messages to standard error, and documented exit codes say what happened, so any language that can run a process and read JSON (Go, Python, PowerShell, Free Pascal) gets the same validated settings. Writes made with `ezconfig set` are checked against the schema and saved atomically, so a program never reads a half-written file.
+Programs don't parse INI themselves; they call ezconfig. `ezconfig list json` prints the whole merged config as JSON, with defaults filled in, invalid values left out and every value in standard spelling, and `ezconfig get net.port` prints single values. Data goes to standard output, messages to standard error, and documented exit codes say what happened, so any language that can run a process and read JSON (Go, Python, PowerShell, Free Pascal) gets the same validated settings. Writes made with `ezconfig set` are checked against the schema and saved atomically, so a program never reads a half-written file.
 
 ## The schema
 

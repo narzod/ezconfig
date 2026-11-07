@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -484,5 +485,25 @@ func TestSchemaIdentity(t *testing.T) {
 	var none *Schema
 	if none.Identity() != "" {
 		t.Error("nil schema")
+	}
+}
+
+func TestShellExportNeedsSave(t *testing.T) {
+	dir := t.TempDir()
+	cfg := writeFile(t, dir, "config.ini", "name=demo\n")
+	ini, _ := LoadIni(cfg, ".")
+	r := &Repl{ini: ini, saved: ini.Clone(), path: cfg, disk: statFile(cfg)}
+	target := filepath.Join(dir, "config.json")
+
+	r.exec("set name=changed")
+	r.exec("export")
+	if _, err := os.Stat(target); err == nil {
+		t.Fatal("exported with unsaved changes")
+	}
+	r.exec("save")
+	r.exec("export")
+	got, err := os.ReadFile(target)
+	if err != nil || !strings.Contains(string(got), `"name": "changed"`) {
+		t.Errorf("export after save: %v %q", err, got)
 	}
 }

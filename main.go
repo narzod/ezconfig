@@ -27,11 +27,13 @@ copy SRC DEST      copy a section to a new one
 move SRC DEST      move or rename a section
 keys [SECTION]     list key names for everything, or for SECTION
 sections           list section names
-list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
-emit [SECTION]     print everything, or SECTION, as JSON for programs
+list [FORMAT] [SECTION]
+                   print everything, or SECTION, as flat KEY=VALUE lines
+                   (the default), ini, or json (for programs)
+export [FILE]      write the JSON to FILE (default: NAME.json beside NAME.ini)
 check              report problems: values that break the schema, clashing names
 explain [NAME...]  explain keys and sections, or everything
-ask [NAME...]      ask for values (all, or those named); they join the unsaved changes
+ask [NAME...]      ask for values (all, or those named), kept as unsaved changes
 status             show file details and session settings
 changes [SECTION]  show unsaved changes
 path               show the config's full path
@@ -404,38 +406,55 @@ func (r *Repl) exec(line string) bool {
 		printLines(r.view().Sections())
 
 	case "list":
-		if len(args) > 1 {
-			errorf("usage: list [SECTION]")
-			break
-		}
-		lines, ok := r.view().List(firstOr(args, ""))
-		if !ok {
-			errorf("no such section: %s", args[0])
-			break
-		}
-		addrs, _ := r.view().KeyPaths(firstOr(args, ""))
-		r.warnScope(firstOr(args, ""))
-		printLines(listText(addrs, lines))
-
-	case "emit":
-		if len(args) > 1 {
-			errorf("usage: emit [SECTION]")
-			break
-		}
-		out, ok, renamed, err := r.view().JSON(firstOr(args, ""))
-		if !ok {
-			errorf("no such section: %s", args[0])
-			break
-		}
+		format, sec, err := parseList(args, r.ini.delim)
 		if err != nil {
-			errorf("emit: %v", err)
+			errorf("%v", err)
 			break
 		}
-		r.warnScope(firstOr(args, ""))
-		fmt.Print(jsonText(out))
+		if note := formatClash(args, r.view()); note != "" {
+			warnf("%s", note)
+		}
+		l := render(r.view(), format, sec)
+		switch {
+		case !l.found:
+			errorf("no such section: %s", sec)
+		case l.err != nil:
+			errorf("list json: %v", l.err)
+		default:
+			r.warnScope(sec)
+			fmt.Print(colourListing(l, format))
+			for _, k := range l.renamed {
+				warnf("%s", renameNote(k))
+			}
+		}
+
+	case "export":
+		if len(args) > 1 {
+			errorf("usage: export [FILE]")
+			break
+		}
+		// An export is a published copy of the config, so it matches what is
+		// saved: never edits that might yet be reverted.
+		if n := r.unsaved(); n > 0 {
+			errorf("export: %s; save first (or revert), so the export matches %s",
+				plural(n, "unsaved change"), filepath.Base(r.path))
+			break
+		}
+		var schemaPath string
+		if r.schema != nil {
+			schemaPath = r.schema.path
+		}
+		target := exportTarget(r.path, firstOr(args, ""))
+		renamed, _, err := exportJSON(r.view(), r.path, schemaPath, target)
+		if err != nil {
+			errorf("%v", err)
+			break
+		}
+		r.warnScope("")
 		for _, k := range renamed {
 			warnf("%s", renameNote(k))
 		}
+		fmt.Println(exportNote(r.view(), target))
 
 	case "check":
 		if len(args) > 0 {
@@ -512,6 +531,10 @@ func (r *Repl) exec(line string) bool {
 		return true
 
 	default:
+		if note := removedNote(cmd); note != "" {
+			errorf("%s", note)
+			break
+		}
 		errorf("unknown command: %s (try help)", cmd)
 	}
 	return false
@@ -519,7 +542,7 @@ func (r *Repl) exec(line string) bool {
 
 // sectionCommands take section names, so "name." works there as "name".
 var sectionCommands = map[string]bool{
-	"keys": true, "list": true, "emit": true, "changes": true, "wipe": true, "copy": true, "move": true,
+	"keys": true, "changes": true, "wipe": true, "copy": true, "move": true, // list reads its own
 }
 
 // sectionArgs reads each "name." (a name with the delimiter after it) as

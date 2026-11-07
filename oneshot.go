@@ -30,14 +30,14 @@ const (
 	exitArgs      = 4 // bad arguments
 	exitNotFound  = 5 // key or section not found
 	exitCancelled = 6 // ask stopped or not saved; nothing written
-	exitRenamed   = 7 // emit renamed a root key that clashed with a section; the output is complete
+	exitRenamed   = 7 // list json or export renamed a root key that clashed with a section; the output is complete
 )
 
 // oneShotCommands are available from the command line; shellOnly are
 // recognised so they can be refused with a helpful message.
 var (
 	oneShotCommands = map[string]bool{
-		"get": true, "keys": true, "sections": true, "list": true, "emit": true,
+		"get": true, "keys": true, "sections": true, "list": true, "export": true,
 		"check": true, "explain": true, "ask": true, "set": true, "unset": true, "help": true, "version": true,
 	}
 	shellOnly = map[string]bool{
@@ -56,8 +56,10 @@ set KEY=VALUE...   set values and save
 unset KEY...       remove keys and save
 keys [SECTION]     list key names for everything, or for SECTION
 sections           list section names
-list [SECTION]     print KEY=VALUE lines for everything, or for SECTION
-emit [SECTION]     print everything, or SECTION, as JSON for programs
+list [FORMAT] [SECTION]
+                   print everything, or SECTION, as flat KEY=VALUE lines
+                   (the default), ini, or json (for programs)
+export [FILE]      write the JSON to FILE (default: NAME.json beside NAME.ini)
 check              report problems: values that break the schema, clashing names
 explain [NAME...]  explain keys and sections, or everything
 ask [NAME...]      ask for values (all, or those named), then save, redo or quit
@@ -67,7 +69,7 @@ version            show the program version
 
 options:
 -c FILE            config to use (default: config.ini)
--s FILE            schema to use, or none (default: schema.ini next to the config)
+-s FILE            schema to use, or none (default: schema.ini by the config)
 -d CHAR            delimiter between section and key (default: .)
 
 exit status:
@@ -78,8 +80,8 @@ exit status:
 4  bad arguments
 5  key or section not found
 6  ask stopped or quit; nothing saved
-7  emit renamed a root key that shares its name with a section (the output
-   is complete: the key is shown as NAME=)`
+7  list json or export renamed a root key that shares its name with a
+   section (the output is complete: the key is shown as NAME=)`
 
 // oneShot runs cmd with args against the config at path and returns the
 // exit status. Output goes to stdout, messages to stderr.
@@ -102,6 +104,9 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 	if !oneShotCommands[cmd] {
 		if shellOnly[cmd] {
 			return fail(exitArgs, "%s is only available in the interactive shell (run ezconfig without a command)", cmd)
+		}
+		if note := removedNote(cmd); note != "" {
+			return fail(exitArgs, "%s", note)
 		}
 		return fail(exitArgs, "unknown command: %s (try ezconfig help)", cmd)
 	}
@@ -208,17 +213,55 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 		}
 		return exitOK
 
-	case "keys", "list":
+	case "list":
+		format, sec, err := parseList(args, delim)
+		if err != nil {
+			return fail(exitArgs, "%v", err)
+		}
+		if note := formatClash(args, view); note != "" {
+			fmt.Fprintln(stderr, "ezconfig: "+note) // stdout stays the data
+		}
+		l := render(view, format, sec)
+		switch {
+		case !l.found:
+			return notFound([]string{sec})
+		case l.err != nil: // nothing on stdout: half an answer would look whole
+			return fail(exitSyntax, "list json: %v", l.err)
+		}
+		warnScope(sec)
+		fmt.Fprint(stdout, l.text)
+		for _, k := range l.renamed {
+			fmt.Fprintln(stderr, "ezconfig: "+renameNote(k))
+		}
+		if len(l.renamed) > 0 {
+			return exitRenamed
+		}
+		return exitOK
+
+	case "export":
 		if len(args) > 1 {
-			return fail(exitArgs, "usage: %s [SECTION]", cmd)
+			return fail(exitArgs, "usage: export [FILE]")
 		}
-		var lines []string
-		var ok bool
-		if cmd == "keys" {
-			lines, ok = view.KeyPaths(firstOr(args, ""))
-		} else {
-			lines, ok = view.List(firstOr(args, ""))
+		target := exportTarget(path, firstOr(args, ""))
+		renamed, code, err := exportJSON(view, path, schemaPath, target)
+		if err != nil {
+			return fail(code, "%v", err)
 		}
+		warnScope("")
+		for _, k := range renamed {
+			fmt.Fprintln(stderr, "ezconfig: "+renameNote(k))
+		}
+		fmt.Fprintln(stderr, "ezconfig: "+exportNote(view, target)) // stdout stays for data
+		if len(renamed) > 0 {
+			return exitRenamed
+		}
+		return exitOK
+
+	case "keys":
+		if len(args) > 1 {
+			return fail(exitArgs, "usage: keys [SECTION]")
+		}
+		lines, ok := view.KeyPaths(firstOr(args, ""))
 		if !ok {
 			return notFound(args)
 		}
@@ -280,27 +323,6 @@ func oneShot(path, delim, schemaOpt, cmd string, args []string, stdout, stderr i
 			for _, l := range b {
 				fmt.Fprintln(stdout, l)
 			}
-		}
-		return exitOK
-
-	case "emit":
-		if len(args) > 1 {
-			return fail(exitArgs, "usage: emit [SECTION]")
-		}
-		out, ok, renamed, err := view.JSON(firstOr(args, ""))
-		if !ok {
-			return notFound(args)
-		}
-		if err != nil { // nothing on stdout: half an answer would look whole
-			return fail(exitSyntax, "emit: %v", err)
-		}
-		warnScope(firstOr(args, ""))
-		fmt.Fprint(stdout, out)
-		for _, k := range renamed {
-			fmt.Fprintln(stderr, "ezconfig: "+renameNote(k))
-		}
-		if len(renamed) > 0 {
-			return exitRenamed
 		}
 		return exitOK
 

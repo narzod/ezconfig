@@ -386,7 +386,7 @@ func TestOneShotValidOnly(t *testing.T) {
 	if code != 0 || errOut != "" {
 		t.Errorf("list player warns about other sections: %d %q", code, errOut)
 	}
-	code, out, _ = run(t, cfg, ".", "emit", "display")
+	code, out, _ = run(t, cfg, ".", "list", "json", "display")
 	if code != 0 || strings.Contains(out, "scale") {
 		t.Errorf("dump display includes the invalid scale: %d %q", code, out)
 	}

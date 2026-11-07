@@ -7,12 +7,17 @@ the single source of truth for a config.
   Changes stay in memory until saved; an asterisk in the prompt indicates
   unsaved changes, and `changes` lists them.
 - `ezconfig -c config.ini COMMAND ...` runs one command for scripts and other
-  programs: `get`, `set`, `unset`, `keys`, `sections`, `list`, `emit`
-  (JSON for programs). Values in `emit` are always strings, as in the
-  config itself: with a schema they are checked and in standard spelling,
-  so a program converts the ones it needs (decode into a plain map, then
-  convert). `man ./docs/ezconfig.1` (or `docs/ezconfig.txt`) has short
-  examples for PowerShell, Python and Go under USING FROM PROGRAMS.
+  programs: `get`, `set`, `unset`, `keys`, `sections`, `list` (flat,
+  `ini` or `json`), `export`. `list json` is the JSON for programs; values
+  in it are always strings, as in the config itself: with a schema they
+  are checked and in standard spelling, so a program converts the ones it
+  needs (decode into a plain map, then convert). `man ./docs/ezconfig.1`
+  (or `docs/ezconfig.txt`) has short examples for PowerShell, Python and
+  Go under USING FROM PROGRAMS.
+- `ezconfig export` writes that JSON to a file (by default `config.json`
+  next to `config.ini`), for a program that can't run ezconfig. It's a
+  snapshot of the saved config (the shell refuses to export unsaved
+  changes): export again after the config or schema changes.
 
 For an overview written for engineers new to it, see
 [docs/synopsis.md](docs/synopsis.md).
@@ -106,23 +111,23 @@ refuses values that break a rule, `check` reports problems, and `-s none`
 shows the config exactly as written. `explain` covers every key the schema
 knows; `explain SECTION` one section; `explain KEY` one key in detail. A
 bare name is a root key, and also the section of that name if there is
-one; `NAME.` (with the delimiter) is only the section; `ask` reads names
-the same way. See `examples/`.
+one; `NAME.` (with the delimiter) is only the section, in every command
+that takes one, and Tab completion writes sections that way. See `examples/`.
 
 A root key and a section may share a name in INI, but not in one JSON
-object, so `emit` shows such a root key with `=` after its name
+object, so `list json` shows such a root key with `=` after its name
 (`"net=": "wired"`), which no INI key can contain; the section keeps its
-name. It says so on stderr and exits 7, so a program can tell; `emit .`
-and `emit net` give each part without renaming, and `check` reports the
-clash. Section names may contain `=` (ezconfig never creates them, and
-`check` points them out), so if a `[net=]` section also exists, `emit`
+name. It says so on stderr and exits 7, so a program can tell; `list json .`
+and `list json net` give each part without renaming, and `check` reports
+the clash. Section names may contain `=` (ezconfig never creates them, and
+`check` points them out), so if a `[net=]` section also exists, `list json`
 refuses with exit 2 and writes nothing, rather than produce JSON with two
 members of the same name.
 
 In the shell and in `ask`, a little colour marks what the text already
 says, as git does: `+` lines green, `-` red, `~` yellow, errors red,
 notes yellow, section headings bold; in the shell, `list` keys are cyan and
-`emit` colours JSON as jq does. It is used only on a terminal, never for
+`list json` colours JSON as jq does. It is used only on a terminal, never for
 one-shot data or anything piped, and `NO_COLOR` (or `TERM=dumb`) turns it
 off.
 
