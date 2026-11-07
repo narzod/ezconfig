@@ -43,6 +43,11 @@ once tried, or dropped if it doesn't work out.
   Free Pascal, Go and Python (and PowerShell), each finding ezconfig next
   to the program first, then on the PATH, checking `ezconfig version`
   (1.0 or later), and reading `list json`.
+- **Push the version tags to GitHub** (v0.15.0 to v0.27.0-rc3). They are
+  in Jeff's WSL clone (fetched from `ezconfig-tags.bundle`) and need one
+  `git push origin --tags` from there once GitHub sign-in works on that
+  machine; Claude's workspace can push branches but not tags. Needed
+  before GitHub releases and `go install ...@v1.0.0`.
 - **A licence file.** Open: which licence (MIT is the common short one).
 - **Publish on GitHub with releases**: one file per platform
   (`ezconfig-windows-amd64.exe`, `ezconfig-linux-amd64`,
